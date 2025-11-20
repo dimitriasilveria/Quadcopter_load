@@ -3,9 +3,9 @@ from scipy.spatial.transform import Rotation as R
 from scipy.linalg import logm
 
 def R3_so3(w):
-    v3 = w[2]
-    v2 = w[1]
-    v1 = w[0]
+    v3 = w[2,0]
+    v2 = w[1,0]
+    v1 = w[0,0]
     so3 = np.array([[ 0 , -v3,  v2],
           [v3,   0, -v1],
           [-v2,  v1,   0]])

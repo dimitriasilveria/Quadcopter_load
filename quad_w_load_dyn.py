@@ -2,6 +2,7 @@ import numpy as np
 from utils import R3_so3
 from scipy.linalg import expm
 import matplotlib.pyplot as plt
+from icecream import ic
 
 class quad_w_load_dyn:
     def __init__(self, mass_quad=1.0, mass_load=0.5, length=0.3, gravity=9.81):
@@ -29,16 +30,14 @@ class quad_w_load_dyn:
     
     def v_l_dot(self,p, p_dot, f):
         """Compute the time derivative of the load velocity."""
-        aux_1 = p@(f*self.R @ self.e_3)
-        aux_2 = p_dot@p_dot
+        aux_1 = p.T@(f*self.R @ self.e_3)
+        aux_2 = p_dot.T@p_dot
         v_l_dot = (aux_1 - aux_2)*p/(self.ml+self.mq) - self.g*self.e_3
         return v_l_dot
     
     def p_dot(self,p, omega_l):
         """Compute the time derivative of the unit vector from load to quadcopter."""
         p_dot = np.cross(omega_l, p, axis=0)
-        print(p_dot.shape)
-        input("pause")
         return p_dot
     
     def omega_l_dot(self,p, f):
@@ -49,7 +48,7 @@ class quad_w_load_dyn:
 
     def R_quad_dot(self, omega):
         """Compute the time derivative of the rotation matrix."""
-        print(omega.shape)
+        print('omega',omega.shape)
         input("pause")
         omega_hat = R3_so3(omega)
         R_dot = omega_hat @ self.R
@@ -99,23 +98,30 @@ class quad_w_load_dyn:
     
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
-    f = 9.81*(quad.mq + quad.ml)
+    f = 9.81*(quad.mq + quad.ml) + 2.0  # thrust force
     tau = np.array([[0],[0],[0]])
     N = 1000
-    X = np.zeros((quad.n_states+3, N))
+    X = np.zeros((6, N))
+
     x0 = np.zeros((quad.n_states, 1))
+    X[0:3,0] = x0[0:3,0]
+    X[3:6,0] = quad.quad_position().flatten()
 
     quad.x[6:9] = np.array([[0],[0],[-1]])
     quad.x[3:6] = np.array([[0],[0],[0]])
     quad.x[0:3] = np.array([[0],[0],[0]])
 
-    for i in range(1000):
-        quad.x, quad.R = quad.runge_kutta_step(quad.x, f, tau)
-        print("Step:", i)
-        print("Load Position:", quad.x[0:3].flatten())
-        print("Load Velocity:", quad.x[3:6].flatten())
-        print("Cable Direction:", quad.x[6:9].flatten())
-        print("Load Angular Velocity:", quad.x[9:12].flatten())
-        print("Quadcopter Angular Velocity:", quad.x[12:15].flatten())
-        print("Rotation Matrix:\n", quad.R)
-        print("-------------------------------")
+    for i in range(N):
+        x, R = quad.runge_kutta_step(quad.x, f, tau)
+        X[0:3,i] = x[0:3,0]
+        X[3:6,i] = quad.quad_position().flatten()
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot(X[0,:], X[1,:], X[2,:], label='Load Trajectory')
+    ax.plot(X[3,:], X[4,:], X[5,:], label='Quadcopter Trajectory')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.legend()
+    plt.show()
