@@ -7,7 +7,7 @@ from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
 
 class quad_w_load_dyn:
-    def __init__(self, mass_quad=1.0, mass_load=0.5, length=0.3, gravity=9.81):
+    def __init__(self, mass_quad=0.835, mass_load=0.088, length=0.5, gravity=9.81):
         self.mq = mass_quad  # mass of the quadcopter
         self.ml = mass_load  # mass of the load
         self.l = length      # length of the cable
@@ -22,7 +22,7 @@ class quad_w_load_dyn:
         #9:12 angular velocity of the load
         #12:15 angular velocity of the quadcopter
         #self.R represents the orientation of the quadcopter
-        self.J_quad = np.diag([0.01, 0.01, 0.02])  # inertia matrix of the quadcopter
+        self.J_quad = 1e-3*np.diag([2.32, 2.32, 4])  # inertia matrix of the quadcopter
         self.e_3 = np.array([[0],[0],[1]])  # unit vector in z-direction
         self.dt = 0.01  # time step for integration
         self.h = 0.001 # runge-kutta sub-step size
@@ -35,7 +35,7 @@ class quad_w_load_dyn:
     def v_l_dot(self,p, p_dot, f):
         """Compute the time derivative of the load velocity."""
         aux_1 = p.T@(f*self.R @ self.e_3)
-        aux_2 = p_dot.T@p_dot
+        aux_2 = self.mq*self.l*p_dot.T@p_dot
         v_l_dot = (aux_1 - aux_2)*p/(self.ml+self.mq) - self.g*self.e_3
         return v_l_dot
     
@@ -47,13 +47,14 @@ class quad_w_load_dyn:
     def omega_l_dot(self,p, f):
         """Compute the time derivative of the load's angular velocity."""
         aux = f*self.R @ self.e_3
-        omega_l_dot = (-np.cross(p, aux, axis=0))/(self.ml*self.l) 
+        if self.ml==0:
+            omega_l_dot = np.zeros((3,1))
+            return omega_l_dot
+        omega_l_dot = (np.cross(-p, aux, axis=0))/(self.ml*self.l) 
         return omega_l_dot
 
     def R_quad_dot(self, omega):
         """Compute the time derivative of the rotation matrix."""
-        print('omega',omega.shape)
-        input("pause")
         omega_hat = R3_so3(omega)
         R_dot = omega_hat @ self.R
         return R_dot
@@ -75,20 +76,22 @@ class quad_w_load_dyn:
         x_dot[3:6] = self.v_l_dot(p, p_dot, f)
         x_dot[6:9] = p_dot
         x_dot[9:12] = self.omega_l_dot(p, f)
-        # R_dot = self.R_quad_dot()
+        R_dot = self.R_quad_dot(omega_quad)
         x_dot[12:15] = self.omega_quad_dot(omega_quad, tau)
-        return x_dot
+        return x_dot, R_dot
     def runge_kutta_step(self, x0, f, tau):
         """Perform 4th order integration"""
         n = int(self.dt / self.h)
         for _ in range(n):
-            k1_x = self.dynamics(x0, f, tau)
-            k2_x = self.dynamics(x0 + 0.5 * self.h * k1_x, f, tau)
-            k3_x = self.dynamics(x0 + 0.5 * self.h * k2_x, f, tau)
-            k4_x = self.dynamics(x0 + self.h * k3_x, f, tau)
+            k1_x, k1_R = self.dynamics(x0, f, tau)
+            k2_x, k2_R = self.dynamics(x0 + 0.5 * self.h * k1_x, f, tau)
+            k3_x, k3_R = self.dynamics(x0 + 0.5 * self.h * k2_x, f, tau)
+            k4_x, k4_R = self.dynamics(x0 + self.h * k3_x, f, tau)
 
             x0 += (self.h / 6) * (k1_x + 2 * k2_x + 2 * k3_x + k4_x)
-            self.R = self.R @ expm(self.h*R3_so3(x0[12:15]))
+            self.R += (self.h / 6) * (k1_R + 2 * k2_R + 2 * k3_R + k4_R)
+            self.R = self.R / np.linalg.norm(self.R, axis=0)  # re-orthonormalize R
+            # self.R = self.R @ expm(self.h*R3_so3(x0[12:15]))
         self.x = x0
 
         return x0, self.R
@@ -244,17 +247,28 @@ def plot_quadcopter_pendulum_3d(X, Rot=None, cable_length=None, indices=None,
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
     f = 9.81*(quad.mq + quad.ml)+2  # thrust force
-    tau = np.array([[0],[-1],[1]])
-    N = 50
+    tau = np.array([[0.1],[0.1],[0]])
+    N = 200
+    t = np.linspace(0, N*quad.dt, N)
+    Tau = np.array([np.zeros(N), np.sin(0.01*t), np.zeros(N)])
+    f = 9.81*(quad.mq + quad.ml)  # thrust force
     Rot = np.zeros((3,3,N))
     X = np.zeros((6, N))
 
     x0 = np.zeros((quad.n_states, 1))
     X[0:3,0] = x0[0:3,0]
+    
+    # quad.x[6:9] = x0[6:9] = np.array([[1],[1],[1]])/np.linalg.norm(np.array([[1],[1],[1]]))
     X[3:6,0] = quad.quad_position().flatten()
 
 
     for i in range(N):
+        if i == 0:
+            f = 9.81*(quad.mq + quad.ml)  # thrust force
+            # tau = np.array([[0],[-0.01],[0]])
+        else: 
+            f = 9.81*(quad.mq + quad.ml)  # thrust force
+            tau = np.array([[0],[0.1],[0]])
         x, R_ = quad.runge_kutta_step(quad.x, f, tau)
         X[0:3,i] = x[0:3,0]
         X[3:6,i] = quad.quad_position().flatten()
@@ -265,11 +279,11 @@ if __name__ == "__main__":
     # ax = fig.add_subplot(111, projection='3d')
     # ax.plot(X[0,:], X[1,:], X[2,:], label='Load Trajectory')
     # ax.plot(X[3,:], X[4,:], X[5,:], label='Quadcopter Trajectory')
-    # quad.draw_pendulum_3d(ax, X[3:6,-1], X[0:3,-1])
+    # # quad.draw_pendulum_3d(ax, X[3:6,-1], X[0:3,-1])
     # ax.set_xlabel('X')
     # ax.set_ylabel('Y')
     # ax.set_zlabel('Z')
     # ax.legend()
     # plt.show()
 
-    quad.animate_quad_pendulum_3d(X[3:6,:], X[0:3,:], Rot=Rot, interval=50, elev=20, azim=-60)
+    # quad.animate_quad_pendulum_3d(X[3:6,:], X[0:3,:], Rot=Rot, interval=50, elev=20, azim=-60)
