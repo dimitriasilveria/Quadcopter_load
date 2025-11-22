@@ -14,7 +14,7 @@ class quad_w_load_dyn:
         self.g = gravity     # gravitational acceleration
         self.n_states = 15  # number of states in the system
         self.x = np.zeros((self.n_states, 1))  # state vector initialization
-        self.x[6:9] = np.array([[0],[0],[1]])  # initial unit vector from load to quadcopter
+        self.x[6:9] = np.array([[0],[0],[-1]])  # initial unit vector from load to quadcopter
         self.R = np.eye(3)  # rotation matrix initialization
         #0:3 position of load
         #3:6 velocity of load
@@ -51,7 +51,7 @@ class quad_w_load_dyn:
         if self.ml==0:
             omega_l_dot = np.zeros((3,1))
             return omega_l_dot
-        omega_l_dot = (np.cross(p, aux, axis=0))/(self.ml*self.l) 
+        omega_l_dot = (np.cross(-p, aux, axis=0))/(self.ml*self.l) 
         return omega_l_dot
 
     def R_quad_dot(self, omega):
@@ -101,7 +101,7 @@ class quad_w_load_dyn:
         """Compute the position of the quadcopter."""
         p = self.x[6:9]
         x_l = self.x[0:3]
-        x_q = x_l + self.l * p
+        x_q = x_l - self.l * p
         return x_q
     
 def _set_axes_equal(ax):
@@ -469,7 +469,7 @@ if __name__ == "__main__":
 
     for i in range(N):
         if i == 0:
-            f = 9.81*(quad.mq + quad.ml)+1  # thrust force
+            f = 9.81*(quad.mq + quad.ml)+2  # thrust force
             # tau = np.array([[0],[-0.01],[0]])
         else: 
             f = 9.81*(quad.mq + quad.ml)  # thrust force
