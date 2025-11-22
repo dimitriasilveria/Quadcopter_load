@@ -23,6 +23,7 @@ class quad_w_load_dyn:
         #12:15 angular velocity of the quadcopter
         #self.R represents the orientation of the quadcopter
         self.J_quad = 1e-3*np.diag([2.32, 2.32, 4])  # inertia matrix of the quadcopter
+        self.J_quad_inv = np.linalg.inv(self.J_quad)
         self.e_3 = np.array([[0],[0],[1]])  # unit vector in z-direction
         self.dt = 0.01  # time step for integration
         self.h = 0.001 # runge-kutta sub-step size
@@ -50,7 +51,7 @@ class quad_w_load_dyn:
         if self.ml==0:
             omega_l_dot = np.zeros((3,1))
             return omega_l_dot
-        omega_l_dot = (np.cross(-p, aux, axis=0))/(self.ml*self.l) 
+        omega_l_dot = (np.cross(p, aux, axis=0))/(self.ml*self.l) 
         return omega_l_dot
 
     def R_quad_dot(self, omega):
@@ -61,7 +62,7 @@ class quad_w_load_dyn:
     
     def omega_quad_dot(self, omega, tau):
         """Compute the time derivative of the quadcopter's angular velocity."""
-        omega_quad_dot = np.linalg.inv(self.J_quad) @ (tau - np.cross(omega, self.J_quad @ omega, axis=0))
+        omega_quad_dot = self.J_quad_inv @ (tau - np.cross(omega, self.J_quad @ omega, axis=0))
         return omega_quad_dot
     
     def dynamics(self,x, f, tau):
@@ -242,12 +243,216 @@ def plot_quadcopter_pendulum_3d(X, Rot=None, cable_length=None, indices=None,
         plt.show()
 
     return fig, ax
-    
+
+def _set_axes_equal_3d(ax):
+    """Make 3D axes have equal scale (works with pre-known limits)."""
+    x_limits = ax.get_xlim3d()
+    y_limits = ax.get_ylim3d()
+    z_limits = ax.get_zlim3d()
+    x_range = abs(x_limits[1] - x_limits[0])
+    x_middle = np.mean(x_limits)
+    y_range = abs(y_limits[1] - y_limits[0])
+    y_middle = np.mean(y_limits)
+    z_range = abs(z_limits[1] - z_limits[0])
+    z_middle = np.mean(z_limits)
+    plot_radius = 0.5 * max([x_range, y_range, z_range])
+    ax.set_xlim3d([x_middle - plot_radius, x_middle + plot_radius])
+    ax.set_ylim3d([y_middle - plot_radius, y_middle + plot_radius])
+    ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
+
+def animate_quadcopter_pendulum_3d(X, Rot=None, cable_length=None,
+                                   quad_arm_length=0.12, interval=40,
+                                   trail=50, figsize=(9,7), elev=20, azim=-60,
+                                   show=True):
+    """
+    Create and return a matplotlib.animation.FuncAnimation showing:
+      - Load trajectory (solid)
+      - Quad trajectory (dashed)
+      - Current load (dot) and quad (triangle) markers
+      - Pendulum line between load and quad
+      - Two quad arms (using Rot if provided)
+      - Optional short trailing path (trail param)
+
+    Parameters
+    ----------
+    X : ndarray (6, N)
+        State snapshots: rows 0:3 = load pos, rows 3:6 = quad pos
+    Rot : ndarray (3,3,N) or None
+        Rotation matrices for the quad (optional). If None, arms are world-aligned.
+    cable_length : float or None
+        If provided, draws a faint sphere around quad at selected times (not animated)
+    quad_arm_length : float
+        Length of the quad arms drawn
+    interval : int
+        Milliseconds between frames
+    trail : int
+        Number of past samples to show as trail for each object (set 0 to disable)
+    figsize, elev, azim : plotting camera setup
+    show : bool
+        If True, calls plt.show() before returning (useful in scripts)
+    Returns
+    -------
+    anim : FuncAnimation
+        The animation object (keeps a reference to prevent GC). Also returns fig, ax.
+    """
+    assert X.ndim == 2 and X.shape[0] >= 6, "X must be shape (6, N)"
+    N = X.shape[1]
+
+    load_traj = X[0:3, :].T  # (N,3)
+    quad_traj = X[3:6, :].T  # (N,3)
+
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, projection='3d')
+    ax.view_init(elev=elev, azim=azim)
+    ax.grid(True)
+
+    # precompute global bounds and set them so the axes don't jump
+    all_pts = np.vstack((load_traj, quad_traj))
+    pad = 0.1 * np.max(np.ptp(all_pts, axis=0))
+    xmin, ymin, zmin = all_pts.min(axis=0) - pad
+    xmax, ymax, zmax = all_pts.max(axis=0) + pad
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
+    ax.set_zlim(zmin, zmax)
+    _set_axes_equal_3d(ax)
+
+    # static full trajectories (faint)
+    traj_load_line, = ax.plot(load_traj[:,0], load_traj[:,1], load_traj[:,2],
+                              linewidth=1.5, alpha=0.25, label='load trajectory')
+    traj_quad_line, = ax.plot(quad_traj[:,0], quad_traj[:,1], quad_traj[:,2],
+                              linestyle='--', linewidth=1.0, alpha=0.25, label='quad trajectory')
+
+    # dynamic artists for current frame
+    load_point, = ax.plot([load_traj[0,0]], [load_traj[0,1]], [load_traj[0,2]],
+                          marker='o', markersize=6, linestyle='None')
+    quad_point, = ax.plot([quad_traj[0,0]], [quad_traj[0,1]], [quad_traj[0,2]],
+                          marker='^', markersize=8, linestyle='None')
+
+    pendulum_line, = ax.plot([], [], [], linewidth=2)
+
+    # quad arms (two lines)
+    arm1_line, = ax.plot([], [], [], linewidth=3)
+    arm2_line, = ax.plot([], [], [], linewidth=3)
+
+    # optional trailing path lines
+    if trail > 0:
+        load_trail_line, = ax.plot([], [], [], linewidth=2, alpha=0.9)
+        quad_trail_line, = ax.plot([], [], [], linewidth=1.5, alpha=0.9)
+    else:
+        load_trail_line = quad_trail_line = None
+
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_zlabel('Z (m)')
+    ax.legend()
+
+    # helper to extract axis data
+    def _set_arm_lines(center, Rmat):
+        """Return endpoints for two orthogonal arms given center and (optional) Rmat."""
+        if Rmat is None:
+            # world-aligned arms in XY-plane
+            p1 = center + np.array([ quad_arm_length, 0.0, 0.0])
+            p2 = center + np.array([-quad_arm_length, 0.0, 0.0])
+            p3 = center + np.array([0.0,  quad_arm_length, 0.0])
+            p4 = center + np.array([0.0, -quad_arm_length, 0.0])
+        else:
+            # assume Rmat maps body->inertial and columns are body axes
+            x_axis = Rmat[:,0].flatten()
+            y_axis = Rmat[:,1].flatten()
+            p1 = center + quad_arm_length * x_axis
+            p2 = center - quad_arm_length * x_axis
+            p3 = center + quad_arm_length * y_axis
+            p4 = center - quad_arm_length * y_axis
+        return (p1,p2,p3,p4)
+
+    # init function
+    def init():
+        pendulum_line.set_data([], [])
+        pendulum_line.set_3d_properties([])
+        arm1_line.set_data([], [])
+        arm1_line.set_3d_properties([])
+        arm2_line.set_data([], [])
+        arm2_line.set_3d_properties([])
+        if load_trail_line is not None:
+            load_trail_line.set_data([], []); load_trail_line.set_3d_properties([])
+            quad_trail_line.set_data([], []); quad_trail_line.set_3d_properties([])
+        load_point.set_data([], []); load_point.set_3d_properties([])
+        quad_point.set_data([], []); quad_point.set_3d_properties([])
+        return (pendulum_line, arm1_line, arm2_line, load_point, quad_point,
+                load_trail_line, quad_trail_line)
+
+    # animation update for frame i
+    def update(i):
+        # clamp i
+        i = int(i) % N
+        load = load_traj[i]
+        quad = quad_traj[i]
+
+        # update markers
+        load_point.set_data([load[0]], [load[1]])
+        load_point.set_3d_properties([load[2]])
+        quad_point.set_data([quad[0]], [quad[1]])
+        quad_point.set_3d_properties([quad[2]])
+
+        # pendulum line
+        xs = [load[0], quad[0]]
+        ys = [load[1], quad[1]]
+        zs = [load[2], quad[2]]
+        pendulum_line.set_data(xs, ys)
+        pendulum_line.set_3d_properties(zs)
+
+        # arms
+        if Rot is not None and Rot.shape == (3,3,N):
+            Rm = Rot[:,:,i]
+        else:
+            Rm = None
+        p1, p2, p3, p4 = _set_arm_lines(quad, Rm)
+        arm1_line.set_data([p1[0], p2[0]], [p1[1], p2[1]])
+        arm1_line.set_3d_properties([p1[2], p2[2]])
+        arm2_line.set_data([p3[0], p4[0]], [p3[1], p4[1]])
+        arm2_line.set_3d_properties([p3[2], p4[2]])
+
+        # trails
+        if trail > 0:
+            start = max(0, i - trail)
+            load_seg = load_traj[start:i+1]
+            quad_seg = quad_traj[start:i+1]
+            load_trail_line.set_data(load_seg[:,0], load_seg[:,1])
+            load_trail_line.set_3d_properties(load_seg[:,2])
+            quad_trail_line.set_data(quad_seg[:,0], quad_seg[:,1])
+            quad_trail_line.set_3d_properties(quad_seg[:,2])
+
+        return (pendulum_line, arm1_line, arm2_line, load_point, quad_point,
+                load_trail_line, quad_trail_line)
+
+    anim = FuncAnimation(fig, update, frames=np.arange(0, N),
+                         init_func=init, interval=interval, blit=False)
+
+    # optionally draw a faint sphere at a few indices to show cable_length (not animated)
+    if cable_length is not None:
+        try:
+            # draw at start, middle, end (faint)
+            idxs = [0, N//2, N-1]
+            u = np.linspace(0, 2*np.pi, 20)
+            v = np.linspace(0, np.pi, 10)
+            for idx in idxs:
+                cx, cy, cz = quad_traj[idx]
+                xs = cx + cable_length * np.outer(np.cos(u), np.sin(v))
+                ys = cy + cable_length * np.outer(np.sin(u), np.sin(v))
+                zs = cz + cable_length * np.outer(np.ones_like(u), np.cos(v))
+                ax.plot_wireframe(xs, ys, zs, alpha=0.06)
+        except Exception:
+            pass
+
+    if show:
+        plt.show()
+
+    return fig, ax, anim    
 
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
     f = 9.81*(quad.mq + quad.ml)+2  # thrust force
-    tau = np.array([[0.1],[0.1],[0]])
+    tau = np.array([[0.],[0.01],[0]])
     N = 200
     t = np.linspace(0, N*quad.dt, N)
     Tau = np.array([np.zeros(N), np.sin(0.01*t), np.zeros(N)])
@@ -264,17 +469,20 @@ if __name__ == "__main__":
 
     for i in range(N):
         if i == 0:
-            f = 9.81*(quad.mq + quad.ml)  # thrust force
+            f = 9.81*(quad.mq + quad.ml)+1  # thrust force
             # tau = np.array([[0],[-0.01],[0]])
         else: 
             f = 9.81*(quad.mq + quad.ml)  # thrust force
-            tau = np.array([[0],[0.1],[0]])
+            tau = np.array([[0],[0.0],[0]])
         x, R_ = quad.runge_kutta_step(quad.x, f, tau)
         X[0:3,i] = x[0:3,0]
         X[3:6,i] = quad.quad_position().flatten()
         Rot[:,:,i] = R_
 
-    plot_quadcopter_pendulum_3d(X, Rot=Rot, cable_length=quad.l, indices=[0, N//2, N-1])
+    # plot_quadcopter_pendulum_3d(X, Rot=Rot, cable_length=quad.l, indices=[0, N//2, N-1])
+    fig, ax, anim = animate_quadcopter_pendulum_3d(X, Rot=Rot, cable_length=quad.l,
+                                              quad_arm_length=0.12, interval=40, trail=60)
+    anim.save("quadcopter.gif", writer="pillow", fps=30)
     # fig = plt.figure()
     # ax = fig.add_subplot(111, projection='3d')
     # ax.plot(X[0,:], X[1,:], X[2,:], label='Load Trajectory')
