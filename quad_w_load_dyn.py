@@ -15,6 +15,7 @@ class quad_w_load_dyn:
         self.n_states = 15  # number of states in the system
         self.x = np.zeros((self.n_states, 1))  # state vector initialization
         self.x[6:9] = np.array([[0],[0],[-1]])  # initial unit vector from load to quadcopter
+        self.p_dot = np.zeros((3,1))  # initial angular velocity of the load
         self.R = np.eye(3)  # rotation matrix initialization
         #0:3 position of load
         #3:6 velocity of load
