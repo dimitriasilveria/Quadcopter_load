@@ -29,7 +29,7 @@ class load_controller:
         p_dot = self.quad_dyn.p_dot(p, self.quad_dyn.x[9:12])
         A = -self.kx @ e_x - self.kv @ e_v + (self.ml + self.mq) * (a_des + self.g * self.e_3)+ self.mq*self.l *(p_dot.T @ p_dot) * p
         p_c = -A / np.linalg.norm(A)
-        F_n = (A.T @ p)*p
+        F_n = (p_c.T @ p)*p
         return p_c, F_n
     
     def attitude_controller(self,p_des, p_dot_des, p_ddot_des, F_n, b1_d):

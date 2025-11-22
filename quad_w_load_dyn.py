@@ -1,11 +1,10 @@
 import numpy as np 
-from utils import R3_so3
+from utils import R3_so3, animate_quad_and_load
 from scipy.linalg import expm
 import matplotlib.pyplot as plt
 from icecream import ic
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
-from utils import animate_quadcopter_pendulum_3d
 
 class quad_w_load_dyn:
     def __init__(self, mass_quad=0.835, mass_load=0.088, length=0.5, gravity=9.81):
@@ -137,7 +136,7 @@ if __name__ == "__main__":
         Rot[:,:,i] = R_
 
     # plot_quadcopter_pendulum_3d(X, Rot=Rot, cable_length=quad.l, indices=[0, N//2, N-1])
-    fig, ax, anim = animate_quadcopter_pendulum_3d(X, Rot=Rot, cable_length=quad.l,
+    fig, ax, anim = animate_quad_and_load(X[0:3,:], X[3:6,:], R=Rot, x_des=None, cable_length=quad.l,
                                               quad_arm_length=0.12, interval=40, trail=60)
     anim.save("quadcopter.gif", writer="pillow", fps=30)
     # fig = plt.figure()
