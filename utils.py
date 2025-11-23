@@ -177,33 +177,33 @@ def animate_quad_and_load(x_load, x_quad, R=None, x_des=None,
 
     def update(i):
         i = int(i) % N
-        # load = x_load[:, i]
-        # quad = x_quad[:, i]
+        load = x_load[:, i]
+        quad = x_quad[:, i]
 
-        # # markers
-        # load_marker.set_data([load[0]], [load[1]]); load_marker.set_3d_properties([load[2]])
-        # quad_marker.set_data([quad[0]], [quad[1]]); quad_marker.set_3d_properties([quad[2]])
+        # markers
+        load_marker.set_data([load[0]], [load[1]]); load_marker.set_3d_properties([load[2]])
+        quad_marker.set_data([quad[0]], [quad[1]]); quad_marker.set_3d_properties([quad[2]])
 
-        # # pendulum
-        # pendulum_line.set_data([load[0], quad[0]], [load[1], quad[1]])
-        # pendulum_line.set_3d_properties([load[2], quad[2]])
+        # pendulum
+        pendulum_line.set_data([load[0], quad[0]], [load[1], quad[1]])
+        pendulum_line.set_3d_properties([load[2], quad[2]])
 
-        # # arms
-        # if R is not None and R.shape == (3,3,N):
-        #     Rm = R[:,:,i]
-        # else:
-        #     Rm = None
-        # p1,p2,p3,p4 = _set_arm_lines(quad, Rm)
-        # arm1_line.set_data([p1[0], p2[0]], [p1[1], p2[1]]); arm1_line.set_3d_properties([p1[2], p2[2]])
-        # arm2_line.set_data([p3[0], p4[0]], [p3[1], p4[1]]); arm2_line.set_3d_properties([p3[2], p4[2]])
+        # arms
+        if R is not None and R.shape == (3,3,N):
+            Rm = R[:,:,i]
+        else:
+            Rm = None
+        p1,p2,p3,p4 = _set_arm_lines(quad, Rm)
+        arm1_line.set_data([p1[0], p2[0]], [p1[1], p2[1]]); arm1_line.set_3d_properties([p1[2], p2[2]])
+        arm2_line.set_data([p3[0], p4[0]], [p3[1], p4[1]]); arm2_line.set_3d_properties([p3[2], p4[2]])
 
-        # # trails
-        # if trail > 0:
-        #     start = max(0, i - trail)
-        #     load_seg = x_load[:, start:i+1].T
-        #     quad_seg = x_quad[:, start:i+1].T
-        #     load_trail_line.set_data(load_seg[:,0], load_seg[:,1]); load_trail_line.set_3d_properties(load_seg[:,2])
-        #     quad_trail_line.set_data(quad_seg[:,0], quad_seg[:,1]); quad_trail_line.set_3d_properties(quad_seg[:,2])
+        # trails
+        if trail > 0:
+            start = max(0, i - trail)
+            load_seg = x_load[:, start:i+1].T
+            quad_seg = x_quad[:, start:i+1].T
+            load_trail_line.set_data(load_seg[:,0], load_seg[:,1]); load_trail_line.set_3d_properties(load_seg[:,2])
+            quad_trail_line.set_data(quad_seg[:,0], quad_seg[:,1]); quad_trail_line.set_3d_properties(quad_seg[:,2])
 
         return (pendulum_line, arm1_line, arm2_line, load_marker, quad_marker, load_trail_line, quad_trail_line)
 

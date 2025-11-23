@@ -25,7 +25,7 @@ class quad_w_load_dyn:
         self.J_quad = 1e-3*np.diag([2.32, 2.32, 4])  # inertia matrix of the quadcopter
         self.J_quad_inv = np.linalg.inv(self.J_quad)
         self.e_3 = np.array([[0],[0],[1]])  # unit vector in z-direction
-        self.dt = 0.01  # time step for integration
+        self.dt = 0.001  # time step for integration
         self.h = 0.001 # runge-kutta sub-step size
         self.artists = []  # for animation
 
@@ -90,9 +90,9 @@ class quad_w_load_dyn:
             k4_x, k4_R = self.dynamics(x0 + self.h * k3_x, f, tau)
 
             x0 += (self.h / 6) * (k1_x + 2 * k2_x + 2 * k3_x + k4_x)
-            self.R += (self.h / 6) * (k1_R + 2 * k2_R + 2 * k3_R + k4_R)
-            self.R = self.R / np.linalg.norm(self.R, axis=0)  # re-orthonormalize R
-            # self.R = self.R @ expm(self.h*R3_so3(x0[12:15]))
+            # self.R += (self.h / 6) * (k1_R + 2 * k2_R + 2 * k3_R + k4_R)
+            # self.R = self.R / np.linalg.norm(self.R, axis=0)  # re-orthonormalize R
+            self.R = self.R @ expm(self.h*R3_so3(x0[12:15]))
         self.x = x0
 
         return x0, self.R
@@ -136,7 +136,7 @@ if __name__ == "__main__":
         Rot[:,:,i] = R_
 
     # plot_quadcopter_pendulum_3d(X, Rot=Rot, cable_length=quad.l, indices=[0, N//2, N-1])
-    fig, ax, anim = animate_quad_and_load(X[0:3,:], X[3:6,:], R=Rot, x_des=None, cable_length=quad.l,
+    fig, ax, anim = animate_quad_and_load(X[0:3,:], X[3:6,:], R=Rot, x_des=None,
                                               quad_arm_length=0.12, interval=40, trail=60)
     anim.save("quadcopter.gif", writer="pillow", fps=30)
     # fig = plt.figure()
