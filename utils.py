@@ -16,13 +16,20 @@ def R3_so3(w):
 
     return so3
 
+def skew_to_R3(v):
+    w1 = v[2,1]
+    w2 = v[0,2]
+    w3 = v[1,0]
+    w = np.array([w1,w2,w3]).reshape((3,1))
+    return w
+
 def so3_R3(Rot):
 
     log_R = logm(Rot)
     w1 = log_R[2,1]
     w2 = log_R[0,2]
     w3 = log_R[1,0]
-    w = np.array([w1,w2,w3]).T
+    w = np.array([w1,w2,w3]).reshape((3,1))
     return w
 
 def calc_w_from_Rdot(Rot, Rot_prev, dt):

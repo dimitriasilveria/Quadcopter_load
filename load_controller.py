@@ -20,6 +20,7 @@ class load_controller:
         self.kw = 7.5
         self.e_3 = quad_dyn.e_3
 
+
         
 
     def position_controller(self, x_des, v_des, a_des):
@@ -46,3 +47,30 @@ class load_controller:
         b2_c = np.cross(b3_c, b1_c, axis=0)
         R_c = np.hstack((b1_c, b2_c, b3_c))
         return R_c, F
+    
+    def second_order_filter(self, x, xc, zeta=0.7, wn=30):
+        if x.shape[1] == 3:
+            dx2 = -2*zeta*wn*x[3:6,:] + wn**2 * (x[0:3,:] - xc)
+            # dx2 = dx2/np.linalg.det(dx2)
+            dx = np.vstack((x[3:6,:], dx2))
+        else:
+            dx2 = -2*zeta*wn*x[3:6] + wn**2 * (x[0:3] - xc)
+            dx = np.vstack((x[3:6], dx2))
+        return dx
+    
+    def runge_kutta_step(self, x, xc, zeta=0.7, wn=30):
+        h = self.quad_dyn.dt
+        k1 = self.second_order_filter(x, xc, zeta, wn)
+        k2 = self.second_order_filter(x + 0.5*h*k1, xc, zeta, wn)
+        k3 = self.second_order_filter(x + 0.5*h*k2, xc, zeta, wn)
+        k4 = self.second_order_filter(x + h*k3, xc, zeta, wn)
+        x_next = x + (h/6)*(k1 + 2*k2 + 2*k3 + k4)
+        return x_next
+    
+    def command_filter(self, x, xc, zeta=0.7, wn=30):
+        x_next = self.runge_kutta_step(x, xc, zeta, wn)
+        d_state = self.second_order_filter(x_next, xc, zeta, wn)
+        x = x_next[0:3]
+        dx = x_next[3:6]
+        ddx = d_state[3:6]
+        return x, dx, ddx

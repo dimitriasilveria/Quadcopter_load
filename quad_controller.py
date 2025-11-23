@@ -1,5 +1,5 @@
 import numpy as np
-from utils import R3_so3,so3_R3
+from utils import R3_so3,skew_to_R3
 from icecream import ic
 #0:3 position of load
 #3:6 velocity of load
@@ -22,7 +22,7 @@ class quad_controller:
         Rot = self.quad_dyn.R
         omega = self.quad_dyn.x[12:15]
         aux =  R3_so3(omega) @ Rot.T @ R_des @ omega_des - Rot.T @ R_des @ omega_des
-        e_R = 0.5 * so3_R3(R_des.T @ Rot - Rot.T @ R_des)
+        e_R = 0.5 * skew_to_R3(R_des.T @ Rot - Rot.T @ R_des)
         e_R = e_R.reshape((3,1))
         e_omega = omega - Rot.T @ R_des @ omega_des
         tau = - self.k_R @ e_R - self.k_omega @ e_omega + np.cross(omega, self.J_quad @ omega, axis=0) - self.J_quad @ aux
