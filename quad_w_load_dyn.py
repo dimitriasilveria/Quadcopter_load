@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from icecream import ic
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
+#import ode from scipy
+from scipy.integrate import RK45
 
 class quad_w_load_dyn:
     def __init__(self, mass_quad=0.835, mass_load=0.088, length=0.5, gravity=9.81):
@@ -25,7 +27,7 @@ class quad_w_load_dyn:
         self.J_quad = 1e-3*np.diag([2.32, 2.32, 4])  # inertia matrix of the quadcopter
         self.J_quad_inv = np.linalg.inv(self.J_quad)
         self.e_3 = np.array([[0],[0],[1]])  # unit vector in z-direction
-        self.dt = 0.001  # time step for integration
+        self.dt = 0.01  # time step for integration
         self.h = 0.001 # runge-kutta sub-step size
         self.artists = []  # for animation
 
@@ -77,24 +79,24 @@ class quad_w_load_dyn:
         x_dot[3:6] = self.v_l_dot(p, p_dot, f)
         x_dot[6:9] = p_dot
         x_dot[9:12] = self.omega_l_dot(p, f)
-        R_dot = self.R_quad_dot(omega_quad)
+        # R_dot = self.R_quad_dot(omega_quad)
         x_dot[12:15] = self.omega_quad_dot(omega_quad, tau)
-        return x_dot, R_dot
+        return x_dot
     def runge_kutta_step(self, x0, f, tau):
         """Perform 4th order integration"""
-        n = int(self.dt / self.h)
-        for _ in range(n):
-            k1_x, k1_R = self.dynamics(x0, f, tau)
-            k2_x, k2_R = self.dynamics(x0 + 0.5 * self.h * k1_x, f, tau)
-            k3_x, k3_R = self.dynamics(x0 + 0.5 * self.h * k2_x, f, tau)
-            k4_x, k4_R = self.dynamics(x0 + self.h * k3_x, f, tau)
-
-            x0 += (self.h / 6) * (k1_x + 2 * k2_x + 2 * k3_x + k4_x)
-            # self.R += (self.h / 6) * (k1_R + 2 * k2_R + 2 * k3_R + k4_R)
-            # self.R = self.R / np.linalg.norm(self.R, axis=0)  # re-orthonormalize R
-            self.R = self.R @ expm(self.h*R3_so3(x0[12:15]))
+        t_span = (0, self.dt)
+        def dyn(t, x):
+            return self.dynamics(x.reshape((self.n_states,1)), f, tau).flatten()
+        rk = RK45(dyn, t_span[0], x0.flatten(), t_span[1],rtol=1e-2, atol=1e-4)
+        while rk.status == 'running':
+            rk.step()
+        sol = rk
+        if sol.y.ndim  > 1:
+            x0 = sol.y[:, -1].reshape((self.n_states,1))
+        else:
+            x0 = sol.y.reshape((self.n_states,1))
+        self.R = self.R @ expm(self.dt*R3_so3(x0[12:15]))
         self.x = x0
-
         return x0, self.R
     
     def quad_position(self):

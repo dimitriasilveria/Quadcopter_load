@@ -1,6 +1,7 @@
 import numpy as np
 from icecream import ic
 from utils import R3_so3
+from scipy.integrate import RK45
 #0:3 position of load
 #3:6 velocity of load
 #6:9 unit vector from load to quadcopter
@@ -15,10 +16,10 @@ class load_controller:
         self.ml = quad_dyn.ml
         self.l = quad_dyn.l
         self.g = quad_dyn.g
-        self.kx = np.diag([5.4,5.4,5.85])
-        self.kv = np.diag([6.0,6.0,4.5])
+        self.kx = 10*np.diag([10.4,20.4,15.85])
+        self.kv = np.diag([10.0,6.0,4.5])
         self.kp = 9
-        self.kw = 7.5
+        self.kw = 2.5
         self.e_3 = quad_dyn.e_3
 
 
@@ -71,19 +72,18 @@ class load_controller:
     def runge_kutta_step(self, x, xc, zeta=0.7, wn=30):
         h = self.quad_dyn.h
         dt = self.quad_dyn.dt
-        n = int(dt / h)
-        for _ in range(n):
-            k1 = self.second_order_filter(x, xc, zeta, wn)
-            k2 = self.second_order_filter(x + 0.5*h*k1, xc, zeta, wn)
-            k3 = self.second_order_filter(x + 0.5*h*k2, xc, zeta, wn)
-            k4 = self.second_order_filter(x + h*k3, xc, zeta, wn)
-            x = x + (h/6)*(k1 + 2*k2 + 2*k3 + k4)
-        if x.shape[1] == 3:
-            det = np.linalg.det(x[0:3,:])
-            if det != 0:
-                # ic('det',det)
-                x[0:3,:] = self.orthonormalize_R(x[0:3,:])
-                det = np.linalg.det(x[0:3,:])
+        t_span = (0, dt)
+        def dyn(t, x):
+            return self.second_order_filter(x.reshape((6,1)), xc, zeta, wn).flatten()
+        sol = RK45(dyn, t_span[0], x.flatten(), t_span[1],rtol=1e-2, atol=1e-4)
+        while sol.status == 'running':
+            sol.step()
+        #checking if array has multiple columns
+        if sol.y.ndim  > 1:
+            x = sol.y[:, -1].reshape((6,1))
+        else:
+            x = sol.y.reshape((6,1))
+        # if x.shape[1] == 3:
                 # ic('det after',det)
                 # x[3:6,:] = x[3:6,:]/(det**(1/3))
         # else:
