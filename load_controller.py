@@ -41,6 +41,7 @@ class load_controller:
         e_p = R3_so3(p)**2 @ p_des
         e_p_dot = p_dot - np.cross((np.cross(p_des, p_dot_des, axis=0)), p, axis=0)
         F_n = (A.T @ p)*p
+        # F_n = -(p_des.T @ p)*p
         F_pd = -self.kp * e_p - self.kw * e_p_dot
         aux = self.mq*self.l*(np.cross(p_des, p_ddot_des, axis=0))
         F_ff = self.mq * self.l * (p.T @ (np.cross(p_des, p_dot_des, axis=0))) * (np.cross(p,p_dot, axis=0)) + np.cross(aux, p, axis=0)

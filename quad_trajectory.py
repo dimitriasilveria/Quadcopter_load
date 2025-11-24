@@ -16,13 +16,14 @@ from scipy.linalg import logm
 #self.R represents the orientation of the quadcopter
 if __name__ == "__main__":
     #defining reference trajectories
-    N = 300
+    N = 500
+    w = 2*np.pi/10
     quad = quad_w_load_dyn()
     r = 1.0
     t = np.linspace(0, N*quad.dt, N)
-    x_des = np.array([r*np.sin(0.1*t),r*np.cos(0.1*t),0.5*np.ones(N)])
-    v_des = np.array([0.1*r*np.cos(0.1*t),-0.1*r*np.sin(0.1*t),np.zeros(N)])
-    a_des = np.array([-0.01*r*np.sin(0.1*t),-0.01*r*np.cos(0.1*t),np.zeros(N)])
+    x_des = np.array([r*np.sin(w*t),r*np.cos(w*t),0.5*np.ones(N)])
+    v_des = np.array([w*r*np.cos(w*t),-w*r*np.sin(w*t),np.zeros(N)])
+    a_des = np.array([-w**2*r*np.sin(w*t),-w**2*r*np.cos(w*t),np.zeros(N)])
     W_des = np.zeros_like(x_des)
     w_quad = np.zeros_like(x_des)
     b1_d = np.array([[1],[0],[0]])
@@ -73,7 +74,9 @@ if __name__ == "__main__":
         R_des_prev = R_des
         # quad.x[0:3] = x_des[:,i].reshape((3,1))  # position reset for trajectory tracking
         # quad.x[3:6] = v_des[:,i].reshape((3,1))  # velocity reset for trajectory tracking
-        R_load[:,:,i] = quad.R
+        # quad.R = R_des  # orientation reset for trajectory tracking
+        quad.x[6:9] = p_des  # load direction reset for trajectory tracking
+        # R_load[:,:,i] = quad.R
 
     # fig, ax, anim = animate_quad_and_load(x_load, x_quad, R=R_load, x_des=x_des, trail=60, interval = 5)
     # anim.save('quad_with_load_controller.gif', writer='pillow', fps=60)
@@ -81,7 +84,7 @@ if __name__ == "__main__":
     #plotting load desired and actual trajectory
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    # ax.plot(x_des[0,:], x_des[1,:], x_des[2,:], label='Desired Load Trajectory')
+    ax.plot(x_des[0,:], x_des[1,:], x_des[2,:], label='Desired Load Trajectory')
     ax.plot(x_load[0,:], x_load[1,:], x_load[2,:], label='Actual Load Trajectory')
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')
