@@ -9,6 +9,8 @@ class Map:
         self.depth = depth
         self.step = step
         self.obstacles = []
+        self.obstacle_buffer = 1.0  # buffer around obstacles
+
 
     def add_obstacle(self, obstacle):
         self.obstacles.append(obstacle)
@@ -37,14 +39,25 @@ class Map:
     #example [(x1, y1), (x2, y2)]
     #where (x1, y1) is bottom-left and (x2, y2) is top-right
     def is_free(self, point):
-        if point[0] < 0 or point[0] > self.width or point[1] < 0 or point[1] > self.height:
+        x, y, z = point
+        if x < 0 or x > self.width or y < 0 or y > self.height or z < 0 or z > self.depth:
             return False
         for obs in self.obstacles:
-            if point[0] >= obs[0][0] and point[1] >= obs[0][1] and point[0] <= obs[1][0] and point[1] <= obs[1][1]:
+            xs = [p[0] for p in obs]
+            ys = [p[1] for p in obs]
+            if len(obs[0]) > 2:
+                zs = [p[2] for p in obs]
+            else:
+                zs = [0, self.depth]
+
+            xmin, xmax = min(xs) - self.obstacle_buffer, max(xs) + self.obstacle_buffer
+            ymin, ymax = min(ys) - self.obstacle_buffer, max(ys) + self.obstacle_buffer
+            zmin, zmax = min(zs) - self.obstacle_buffer, max(zs) + self.obstacle_buffer
+
+            if xmin <= x <= xmax and ymin <= y <= ymax and zmin <= z <= zmax:
                 return False
         return True
-
-    def is_valid(self, points):
+    def collision_check(self, points):
         for point in points:
             if not self.is_free(point):
                 return False
@@ -105,8 +118,8 @@ class Map:
         return ax
 
 if __name__ == "__main__":
-    m = Map(50, 50,50)
-    m.obstacles_one(30)
+    m = Map(40, 40,40)
+    # m.obstacles_one(30)
     m.display()
     plt.show()
 

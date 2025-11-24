@@ -4,22 +4,27 @@ from icecream import ic
 from Maps import Map
 from scipy.spatial import cKDTree 
 from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 
 class EST():
-    def __init__(self, start, goal, quad):
-        self.start = start
+    def __init__(self, start_point, start_state, goal, quad):
+        self.start = start_point
+        self.start_state = start_state
         self.goal = goal
         self.quad = quad
-        self.map = Map(100,100,100)
+        self.map = Map(40,40,40)
+        # self.map.obstacles_one(30)
         self.path = []
-        self.V = [start]
-        self.E = {}
-        self.w = {}
-        self.w_prime = {}
+        self.V = [start_point]
+        self.E_points = {}
+        self.E_states = {}
+        self.w = {start_point: 1.0}
+        self.w_prime = {start_point: 1.0}
         self.delta = 10.0
         self.goal_tol = 2.0
-        self.p = []
+        self.p = {start_point: 1.0}
         _, min_tau = self.quad.calc_min_torque_thrust()
         max_thrust, max_tau = self.quad.calc_max_torque_thrust()
         min_thrust = (self.quad.ml + self.quad.mq) * self.quad.g
@@ -29,10 +34,10 @@ class EST():
     def steer(self,x0, tau, f):
         N = 10
         points = np.zeros((N, self.quad.n_states+3))
-        points[0,:] = x0.flatten()
+        points[0,] = x0.flatten()
         x = x0
         for i in range(1, N):
-            x, Rot = self.quad.runge_kutta_step(x, f, tau)
+            x, Rot = self.quad.runge_kutta_step(x[0:self.quad.n_states], f, tau)
             orientation = R.from_matrix(Rot).as_euler('xyz').reshape((3,1))
             points[i,0:self.quad.n_states] = x.flatten()
             points[i,self.quad.n_states:self.quad.n_states+3] = orientation.flatten()
@@ -44,9 +49,9 @@ class EST():
         return tau.reshape((3,1)), f
     
     def update_proximity(self, x_new):
-        tree = cKDTree(np.array(self.V).squeeze().T)
-        dists, indices = tree.query_ball_point(x_new.flatten(), r=self.delta, return_sorted=True)
-        n = len(dists)
+        tree = cKDTree(self.V)
+        indices = tree.query_ball_point(x_new, r=self.delta, return_sorted=True)
+        n = len(indices)
         self.w[x_new] = n
         self.V.append(x_new)
         max_w = max(self.w.values())
@@ -58,7 +63,8 @@ class EST():
             self.p[vertex] = self.w_prime[vertex] / total_w_prime
 
     def sample(self):
-        sampled_vertex = np.random.choice(self.V, p=self.p)
+        sampled_index = np.random.choice(len(self.V), p=list(self.p.values()))
+        sampled_vertex = self.V[sampled_index]
         return sampled_vertex
     
     def search(self, max_iterations=1000):
@@ -66,35 +72,59 @@ class EST():
             ic(it)
             x_rand = self.sample()
             tau, f = self.sample_actuation()
-            x0 = self.E[x_rand][ -1,:].reshape((self.quad.n_states,1))
+            if x_rand == self.start:
+                x0 = self.start_state
+            else:
+                x0 = self.E_states[x_rand][ -1,:].reshape((self.quad.n_states+3,1))
             X_new = self.steer(x0, tau, f) # path from x_rand to x_new
-            x_new = X_new[ -1,0:3].reshape((3,1))
-            if not self.map.collision_check(x_rand, X_new):
-                self.E[x_new] = X_new
+            x_new = tuple(X_new[-1,0:3])
+            x_new_points = []
+            for point in X_new:
+                point_tuple = tuple(point[0:3])
+                x_new_points.append(point_tuple)
+                if not self.map.is_free(point_tuple):
+                    ic("Collision detected, skipping this extension.")
+                    break
+            else:
+                self.E_points[x_new] = x_new_points
+                self.E_states[x_new] = X_new
                 self.update_proximity(x_new)
-                if np.linalg.norm(x_new - self.goal) < self.goal_tol:
+                if self.check_goal_reached(x_new):
                     ic("Goal reached!")
                     self.path = self.reconstruct_path(x_new)
                     break
 
     def reconstruct_path(self, x_goal):
-        path = []
         x_current = x_goal
         while x_current in self.E:
             X_segment = self.E[x_current]
-            path.append(list(X_segment))
+            self.path.append(list(X_segment))
             x_current = X_segment[0,:].reshape((self.quad.n_states,1))
-        return path
+        return self.path
     
+    def check_goal_reached(self, x):
+        return np.linalg.norm(np.array(x) - np.array(self.goal)) < self.goal_tol
 
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
-    start = quad.x
-    start[0:3] = np.array([[10],[10],[10]])
-    goal = np.array([[50],[50],[50]])
-    est = EST(start, goal, quad)
-    est.search(5000)
+    start_state = np.zeros((quad.n_states+3,1))
+    start_state[0:quad.n_states] = quad.x.copy()
+    orientation = R.from_matrix(quad.R).as_euler('xyz').reshape((3,1))
+    start_state[quad.n_states:quad.n_states+3] = orientation
+    start_state[0:3] = np.array([[10],[10],[10]])
+    start_point = (10,10,10)
+    goal = (30,30,30)
+    est = EST(start_point, start_state, goal, quad)
+    est.search(100000)
     ic(len(est.path))
+    #plot the path
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    est.map.display(ax)
+    for segment in est.path:
+        ax.plot(segment[:,0], segment[:,1], segment[:,2], color='b')
+    plt.show()
+
 
 
 

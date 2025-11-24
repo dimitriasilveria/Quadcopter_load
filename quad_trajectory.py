@@ -16,7 +16,7 @@ from scipy.linalg import logm
 #self.R represents the orientation of the quadcopter
 if __name__ == "__main__":
     #defining reference trajectories
-    N = 500
+    N = 300
     w = 2*np.pi/10
     quad = quad_w_load_dyn()
     r = 1.0

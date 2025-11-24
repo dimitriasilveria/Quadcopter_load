@@ -30,10 +30,31 @@ class quad_w_load_dyn:
         self.dt = 0.01  # time step for integration
         self.h = 0.001 # runge-kutta sub-step size
         self.artists = []  # for animation
+        self.km = 1.5e-9  # motor constant
+        self.kf = 6.11e-8  # thrust constant
+        self.L = 0.175  # distance from the center to each motor
+        self.w_max = 7800  # maximum motor speed in RPM
+        self.w_min = 1200     # minimum motor speed in RPM
 
     # def x_l_dot(self):
     #     """Compute the time derivative of the load position."""
     #     return self.x[3:6]
+
+    def calc_max_torque_thrust(self):
+        tau_x_max = self.L * self.kf * (self.w_max**2 - self.w_min**2)
+        tau_y_max = self.L * self.kf * (self.w_max**2 - self.w_min**2)
+        tau_z_max = 2*self.km * (self.w_max**2 - self.w_min**2)
+        max_tau = np.array([[tau_x_max],[tau_y_max],[tau_z_max]])
+        max_thrust = self.kf * 4 * self.w_max**2
+        return max_thrust, max_tau
+    
+    def calc_min_torque_thrust(self):
+        tau_x_min = self.L * self.kf * (self.w_min**2 - self.w_max**2)
+        tau_y_min = self.L * self.kf * (self.w_min**2 - self.w_max**2)
+        tau_z_min = 2*self.km * (self.w_min**2 - self.w_max**2)
+        min_tau = np.array([[tau_x_min],[tau_y_min],[tau_z_min]])
+        min_thrust = self.kf * 4 * self.w_min**2
+        return min_thrust, min_tau
     
     def v_l_dot(self,p, p_dot, f):
         """Compute the time derivative of the load velocity."""
