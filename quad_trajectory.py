@@ -42,6 +42,7 @@ if __name__ == "__main__":
     R_load = np.zeros((3,3,N))
     v_load = np.zeros((3,N))
     for i in range(N):
+        ic(i)
         #load position controller
         p_des, A = load_ctrl.position_controller(x_des[:,i].reshape((3,1)), v_des[:,i].reshape((3,1)), a_des[:,i].reshape((3,1)))
         #load attitude controller
