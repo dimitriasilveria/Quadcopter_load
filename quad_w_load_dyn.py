@@ -96,6 +96,8 @@ class quad_w_load_dyn:
         else:
             x0 = sol.y.reshape((self.n_states,1))
         self.R = self.R @ expm(self.dt*R3_so3(x0[12:15]))
+        #limiting angular velocity of quadcopter
+        x0[12:15] = np.clip(x0[12:15], -np.pi, np.pi)
         self.x = x0
         return x0, self.R
     

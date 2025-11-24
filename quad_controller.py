@@ -15,8 +15,8 @@ class quad_controller:
         self.ml = quad_dyn.ml
         self.l = quad_dyn.l
         self.J_quad = quad_dyn.J_quad
-        self.k_R = np.diag([10.4,15.4,0.4])
-        self.k_omega = np.diag([0.12,0.12,0.08])
+        self.k_R = np.diag([10.4,15.4,5.4])
+        self.k_omega = np.diag([0.12,0.12,0.08])*2
 
     def controller(self, R_des, omega_des, F):
         Rot = self.quad_dyn.R

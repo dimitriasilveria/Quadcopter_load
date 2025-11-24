@@ -17,7 +17,7 @@ class load_controller:
         self.l = quad_dyn.l
         self.g = quad_dyn.g
         self.kx = 10*np.diag([10.4,20.4,15.85])
-        self.kv = np.diag([10.0,6.0,4.5])
+        self.kv = np.diag([10.0,6.0,9.5])
         self.kp = 9
         self.kw = 2.5
         self.e_3 = quad_dyn.e_3

@@ -16,7 +16,7 @@ from scipy.linalg import logm
 #self.R represents the orientation of the quadcopter
 if __name__ == "__main__":
     #defining reference trajectories
-    N = 120
+    N = 300
     quad = quad_w_load_dyn()
     r = 1.0
     t = np.linspace(0, N*quad.dt, N)
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     axs[2].set_xlabel('Time (s)')
     axs[2].set_ylabel('Z Position (m)')
     axs[2].legend()
-    plt.show()
+    # plt.show()
 
     #plotting desired and actual load velocity in time
     fig, axs = plt.subplots(3, 1, figsize=(8, 12))
