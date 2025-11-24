@@ -16,6 +16,14 @@ def R3_so3(w):
 
     return so3
 
+def R2_so2(w):
+    v2 = w[1,0]
+    v1 = w[0,0]
+    so2 = np.array([[ 0 , -v2],
+          [v2,   0]])
+
+    return so2
+
 def skew_to_R3(v):
     w1 = v[2,1]
     w2 = v[0,2]
