@@ -32,7 +32,7 @@ class EST():
         self.max_u = np.vstack((max_tau, max_thrust))
 
     def steer(self,x0, tau, f):
-        N = 50
+        N = 20
         points = np.zeros((N, self.quad.n_states+3))
         points[0,] = x0.flatten()
         x = x0
@@ -68,27 +68,25 @@ class EST():
         return sampled_vertex
     
     def search(self, max_iterations=1000, plot_every=50, path_pause=0.05):
-        # --- setup interactive plot ---
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
 
-        # Plot obstacles, start, goal
+        # Obstacles, start, goal
         self.map.display(ax)
         ax.scatter(*self.start, color='green', s=100, label='Start')
         ax.scatter(*self.goal, color='red', s=100, label='Goal')
 
-        # Set axis limits based on map size
+        # Axis limits
         ax.set_xlim(0, self.map.width)
         ax.set_ylim(0, self.map.height)
         ax.set_zlim(0, self.map.depth)
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
-        ax.view_init(elev=30, azim=45)  # better 3D perspective
+        ax.view_init(elev=30, azim=45)
         plt.ion()
         plt.show()
-
-        tree_lines = []
+        plotted_points = set()
 
         for it in range(max_iterations):
             x_rand = self.sample()
@@ -98,7 +96,7 @@ class EST():
             else:
                 x0 = self.E_states[x_rand][-1,:].reshape((self.quad.n_states+3,1))
 
-            X_new = self.steer(x0, tau, f)  # path from x_rand to x_new
+            X_new = self.steer(x0, tau, f)
             x_new = tuple(X_new[-1,0:3])
             x_new_points = []
 
@@ -108,26 +106,34 @@ class EST():
                 if not self.map.is_free(point_tuple):
                     break
             else:
-                # no collision, add path
+                # Add new segment
                 self.E_points[x_new] = x_new_points
                 self.E_states[x_new] = X_new
                 self.update_proximity(x_new)
 
-                # --- plot tree segment ---
+                # --- Plot only the new segment ---
                 if it % plot_every == 0 or self.check_goal_reached(x_new):
                     segment = np.array(x_new_points)
-                    line, = ax.plot(segment[:,0], segment[:,1], segment[:,2],
-                                    color='blue', alpha=0.7)
-                    tree_lines.append(line)
+                    parent_tuple = tuple(segment[0])
+
+                    if parent_tuple in plotted_points:
+                        # Parent was already plotted → connect it to this new segment
+                        ax.plot(segment[:,0], segment[:,1], segment[:,2], color='blue', alpha=0.7)
+                    else:
+                        # First time plotting this parent → include all points
+                        ax.plot(segment[:,0], segment[:,1], segment[:,2], color='blue', alpha=0.7)
+
+                    # Mark all points in this segment as plotted
+                    for pt in segment:
+                        plotted_points.add(tuple(pt))
                     plt.pause(0.001)
 
-                # check goal
                 if self.check_goal_reached(x_new):
                     print("Goal reached!")
                     self.path = self.reconstruct_path(x_new)
                     break
 
-        # --- highlight final path ---
+        # --- Highlight final path ---
         if self.path:
             print("Animating final path...")
             for segment in self.path:
@@ -138,6 +144,7 @@ class EST():
 
         plt.ioff()
         plt.show()
+
 
 
 

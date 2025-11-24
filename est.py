@@ -75,11 +75,15 @@ class EST():
             if x_rand == self.start:
                 x0 = self.start_state
             else:
-                x0 = self.E_states[x_rand][ -1,:].reshape((self.quad.n_states+3,1))
+                x0 = self.E_states[x_rand][-1,:].reshape((self.quad.n_states+3,1))
             X_new = self.steer(x0, tau, f) # path from x_rand to x_new
             x_new = tuple(X_new[-1,0:3])
             x_new_points = []
+            ic(X_new)
             for point in X_new:
+                ic(x_rand)
+                ic(point)
+                input()
                 point_tuple = tuple(point[0:3])
                 x_new_points.append(point_tuple)
                 if not self.map.is_free(point_tuple):
@@ -113,7 +117,7 @@ if __name__ == "__main__":
     start_state[quad.n_states:quad.n_states+3] = orientation
     start_state[0:3] = np.array([[10],[10],[10]])
     start_point = (10,10,10)
-    goal = (30,30,30)
+    goal = (20,20,20)
     est = EST(start_point, start_state, goal, quad)
     est.search(100000)
     ic(len(est.path))
