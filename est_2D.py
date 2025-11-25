@@ -14,8 +14,9 @@ class EST():
         self.goal = goal
         self.quad = quad
         self.map = Map(100,100,100)
-        self.map.obstacles_one(30)
+        # self.map.obstacles_one(30)
         self.path = []
+        self.states_path = [start_state]
         self.V = [start_point]
         self.E_points = {}
         self.E_states = {}
@@ -31,7 +32,7 @@ class EST():
         self.max_u = np.vstack((max_tau, max_thrust))
 
     def steer(self,x0, tau, f):
-        N = 200
+        N = 100
         points = np.zeros((self.quad.n_states, N))
         points[:,0] = x0.flatten()
         x = x0
@@ -80,16 +81,18 @@ class EST():
             X_new = self.steer(x0, tau, f) # path from x_rand to x_new
             x_new = (float(X_new[0,-1]), float(X_new[1,-1]))
             x_new_points = []
+            is_free = True
             for point in X_new.T:
                 point_tuple = (float(point[0]), float(point[1]))
                 x_new_points.append(point_tuple)
                 if not self.map.is_free(point_tuple):
-                    ic("Collision detected, skipping this extension.")
+                    # ic("Collision detected, skipping this extension.")
+                    is_free = False
                     break
-                elif x_new not in self.V:
-                    self.E_points[x_new] = x_new_points
-                    self.E_states[x_new] = X_new
-                    self.update_proximity(x_new)
+            if is_free and x_new not in self.V:
+                self.E_points[x_new] = x_new_points
+                self.E_states[x_new] = X_new
+                self.update_proximity(x_new)
                 if self.check_goal_reached(x_new):
                     ic("Goal reached!")
                     self.path = self.reconstruct_path(x_new)
@@ -97,10 +100,12 @@ class EST():
 
     def reconstruct_path(self, x_goal):
         x_current = x_goal
-        while x_current in self.E:
-            X_segment = self.E[x_current]
-            self.path.append(list(X_segment))
-            x_current = X_segment[0,:].reshape((self.quad.n_states,1))
+        while x_current != self.start:
+            path_points = self.E_points[x_current]
+            self.path = path_points[:-1] + self.path
+            self.states_path = [self.E_states[x_current][:, :-1]] + self.states_path
+            x_current = path_points[0]
+        self.path.reverse()
         return self.path
     
     def check_goal_reached(self, x):
@@ -112,14 +117,16 @@ if __name__ == "__main__":
     start_state[0:quad.n_states] = quad.x.copy()
     start_state[0:2] = np.array([[25],[50]])
     start_point = (25,50)
-    goal = (75,50)
+    goal = (55,50)
     est = EST(start_point, start_state, goal, quad)
     est.search(100000)
     ic(len(est.path))
+    ic(len(est.states_path))
+    input()
     #plot the path
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
+    fig, ax = plt.subplots()
     est.map.display(ax)
-    for segment in est.path:
-        ax.plot(segment[:,0], segment[:,1], color='b')
+    x = [pt[0] for pt in est.path]
+    y = [pt[1] for pt in est.path]
+    ax.plot(x, y, color='b')
     plt.show()

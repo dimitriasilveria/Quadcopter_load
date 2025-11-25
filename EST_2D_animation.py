@@ -42,7 +42,7 @@ except Exception:
         # where the user pasted the EST class. You can change this line to match
         # your environment.
         try:
-            from est import EST
+            from est_2D import EST
         except Exception:
             print("Could not import EST automatically. Make sure EST is importable (est.py or est_module.py).")
             # We won't exit here so the user can still read the file and adapt it.
