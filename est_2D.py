@@ -121,8 +121,6 @@ if __name__ == "__main__":
     est = EST(start_point, start_state, goal, quad)
     est.search(100000)
     ic(len(est.path))
-    ic(len(est.states_path))
-    input()
     #plot the path
     fig, ax = plt.subplots()
     est.map.display(ax)
