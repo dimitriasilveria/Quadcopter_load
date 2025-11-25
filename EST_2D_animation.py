@@ -1,292 +1,191 @@
-"""
-est_animation.py
-
-Animation script that visualizes an EST search (search tree + map) as it runs.
-
-Usage: put this script in the same folder as your EST implementation (the code you
-posted). It imports EST from that module. Run:
-
-    python est_animation.py
-
-If your EST class is in a different file name change the import at the top.
-
-This script does not modify your EST class; instead it performs one-step
-``est_step`` iterations that mimic the body of EST.search and yields updates to the
-animation. The animation draws:
- - the Map (uses est.map.display(ax) if available)
- - all vertices so far (scatter)
- - tree edges (lines for each extension stored in est.E_points)
- - the latest extension in a brighter color
- - the goal (green circle)
-
-If your Map class or EST class differs slightly, adapt the simple function
-`est_step` accordingly.
-"""
-
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import animation
+from quad_w_load_dyn_2D import quad_w_load_dyn
 from icecream import ic
-import sys
+from Maps2d import Map
+from scipy.spatial import cKDTree 
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
-# Adjust this import if your EST class is defined in another file/module.
-# The user's EST class (from the message) should be importable as `EST`.
-try:
-    from est_2D import EST  # try a custom module name first
-except Exception:
-    # fallback: try importing EST from the current namespace (if user copied it)
-    try:
-        from __main__ import EST
-    except Exception:
-        # As a last resort, try to import from a file named `est.py` or the file
-        # where the user pasted the EST class. You can change this line to match
-        # your environment.
-        try:
-            from est_2D import EST
-        except Exception:
-            print("Could not import EST automatically. Make sure EST is importable (est.py or est_module.py).")
-            # We won't exit here so the user can still read the file and adapt it.
+class EST():
+    def __init__(self, start_point, start_state, goal, quad, seed=None):
+        self.seed = seed
+        self.start = start_point
+        self.start_state = start_state
+        self.goal = goal
+        self.quad = quad
+        self.map = Map(100,100,100)
+        self.map.obstacles_one(30)
+        self.path = []
+        self.states_path = [start_state]
+        self.V = [start_point]
+        self.E_points = {}
+        self.E_states = {}
+        self.w = {start_point: 1.0}
+        self.w_prime = {start_point: 1.0}
+        self.delta = 10.0
+        self.goal_tol = 10.0
+        self.p = {start_point: 1.0}
+        _, min_tau = self.quad.calc_min_torque_thrust()
+        max_thrust, max_tau = self.quad.calc_max_torque_thrust()
+        min_thrust = (self.quad.ml + self.quad.mq) * self.quad.g
+        self.min_u = np.vstack((min_tau, min_thrust))
+        self.max_u = np.vstack((max_tau, max_thrust))
 
+    def steer(self,x0, tau, f):
+        N = 100
+        points = np.zeros((self.quad.n_states, N))
+        points[:,0] = x0.flatten()
+        x = x0
+        for i in range(1, N):
+            if i != 1:
+                tau = 0
+            x = self.quad.runge_kutta_step(x, f, tau)
+            points[:,i] = x.flatten()
+        return points
+        
+    def sample_actuation(self):
+        tau = np.random.uniform(self.min_u[0]/2, self.max_u[0]/2)
+        f = np.random.uniform(self.min_u[1], self.max_u[1])
+        return tau, f
+    
+    def update_proximity(self, x_new):
+        tree = cKDTree(self.V)
+        indices = tree.query_ball_point(x_new, r=self.delta, return_sorted=True)
+        n = len(indices)
+        self.w[x_new] = n
+        self.V.append(x_new)
+        max_w = max(self.w.values())
+        for vertex in self.V:
+            self.w_prime[vertex] = max_w - self.w[vertex] + 1
 
-# One-step EST executor. It mirrors the body of EST.search() from the user's code
-# but yields information needed for animation instead of storing everything at once.
+        total_w_prime = sum(self.w_prime.values())
+        for vertex in self.V:
+            self.p[vertex] = self.w_prime[vertex] / total_w_prime
 
-def est_step(est):
-    """Perform a single EST iteration on `est` instance.
+    def sample(self):
+        sampled_index = np.random.choice(len(self.V), p=list(self.p.values()))
+        sampled_vertex = self.V[sampled_index]
+        return sampled_vertex
+    
+    def search(self, max_iterations=1000):
+        np.random.seed(self.seed)
+        for it in range(max_iterations):
+            x_rand = self.sample()
+            tau, f = self.sample_actuation()
 
-    Returns a dict with keys:
-      - 'added' : True/False (whether a new vertex was added)
-      - 'parent': the sampled vertex (tuple)
-      - 'child' : new vertex (tuple) if added else None
-      - 'path_points': list of 2D tuples along the extension (may be empty on collision)
-      - 'collision': True/False
-      - 'reached_goal': True/False
-      - 'iter_info': optional debug info
-    """
-    info = {
-        'added': False,
-        'parent': None,
-        'child': None,
-        'path_points': [],
-        'collision': False,
-        'reached_goal': False,
-        'iter_info': None
-    }
+            if x_rand == self.start:
+                x0 = self.start_state
+            else:
+                x0 = self.E_states[x_rand][:,-1].reshape((self.quad.n_states,1))
 
-    try:
-        x_rand = est.sample()
-    except Exception as e:
-        info['iter_info'] = f"sampling error: {e}"
-        return info
+            X_new = self.steer(x0, tau, f)
+            x_new = (float(X_new[0,-1]), float(X_new[1,-1]))
 
-    info['parent'] = x_rand
-
-    # draw from actuator sampler
-    try:
-        tau, f = est.sample_actuation()
-    except Exception as e:
-        info['iter_info'] = f"actuation sample error: {e}"
-        return info
-
-    # determine x0 (state) for steering
-    if x_rand == est.start:
-        x0 = est.start_state
-    else:
-        # If E_states doesn't contain the parent (e.g. first iterations), fallback
-        if x_rand not in est.E_states:
-            # If we cannot find previous state, use start_state as fallback
-            x0 = est.start_state
-        else:
-            x0 = est.E_states[x_rand][:, -1].reshape((est.quad.n_states, 1))
-
-    # compute extension (trajectory of states)
-    try:
-        X_new = est.steer(x0, tau, f)
-    except Exception as e:
-        info['iter_info'] = f"steer error: {e}"
-        return info
-
-    # construct 2D points from the trajectory
-    x_new = tuple(X_new[0:2, -1])
-    path_points = []
-    collision = False
-    for point in X_new.T:
-        pt = tuple(point[0:2])
-        path_points.append(pt)
-        if hasattr(est, 'map') and est.map is not None:
-            try:
-                if not est.map.is_free(pt):
-                    collision = True
+            x_new_points = []
+            is_free = True
+            for point in X_new.T:
+                point_tuple = (float(point[0]), float(point[1]))
+                x_new_points.append(point_tuple)
+                if not self.map.is_free(point_tuple):
+                    is_free = False
                     break
-            except Exception:
-                # if map.is_free is not available or errors, skip collision checking
-                pass
 
-    info['path_points'] = path_points
-    info['collision'] = collision
+            if is_free and x_new not in self.V:
+                self.E_points[x_new] = x_new_points
+                self.E_states[x_new] = X_new
 
-    if collision:
-        return info
+                # Parent = first point
+                parent = x_new_points[0]
 
-    # accept the extension: store E_points and E_states similar to the user's code
-    try:
-        est.E_points[x_new] = path_points
-        est.E_states[x_new] = X_new
-    except Exception:
-        # ensure dictionaries exist
-        if not hasattr(est, 'E_points'):
-            est.E_points = {}
-        if not hasattr(est, 'E_states'):
-            est.E_states = {}
-        est.E_points[x_new] = path_points
-        est.E_states[x_new] = X_new
+                self.update_proximity(x_new)
 
-    # update proximity stats
-    try:
-        est.update_proximity(x_new)
-    except Exception as e:
-        # update_proximity may require V to be numeric etc. If it fails, try a
-        # mild fallback: just append vertex and set uniform weights.
-        try:
-            est.V.append(x_new)
-            est.w[x_new] = len(est.V)  # crude
-            est.p = {v: 1.0 / len(est.V) for v in est.V}
-        except Exception:
-            pass
+                # Yield for animation
+                yield ("extend", parent, x_new)
 
-    info['added'] = True
-    info['child'] = x_new
-
-    # check goal
-    try:
-        if est.check_goal_reached(x_new):
-            info['reached_goal'] = True
-    except Exception:
-        pass
-
-    return info
+                if self.check_goal_reached(x_new):
+                    self.path = self.reconstruct_path(x_new)
+                    yield ("goal", None, None)
+                    return
 
 
-# Animation wrapper
-class ESTAnimator:
-    def __init__(self, est, max_iters=5000):
-        self.est = est
-        self.max_iters = max_iters
-        self.iter = 0
-        self.history_last_added = None
+    def reconstruct_path(self, x_goal):
+        x_current = x_goal
+        while x_current != self.start:
+            path_points = self.E_points[x_current]
+            self.path = path_points[:-1] + self.path
+            self.states_path = [self.E_states[x_current][:, :-1]] + self.states_path
+            x_current = path_points[0]
+        self.path.reverse()
+        return self.path
+    
+    def check_goal_reached(self, x):
+        return np.linalg.norm(np.array(x) - np.array(self.goal)) < self.goal_tol
 
-        # figure
-        self.fig, self.ax = plt.subplots()
-        self.sc_vertices = None
-        self.lines = []
-        self.latest_line = None
+if __name__ == "__main__":
+    quad = quad_w_load_dyn()
+    start_state = np.zeros((quad.n_states,1))
+    start_state[0:quad.n_states] = quad.x.copy()
+    start_state[0:2] = np.array([[25],[50]])
 
-        # Plot goal
-        goal = getattr(est, 'goal', None)
-        if goal is not None:
-            self.ax.scatter(goal[0], goal[1], s=100, marker='*', label='goal', zorder=4)
+    start_point = (25,50)
+    goal = (75,50)
 
-        # attempt to plot map (if map.display exists)
-        if hasattr(est, 'map') and est.map is not None:
-            try:
-                est.map.display(self.ax)
-            except Exception:
-                # fallback: if map has a grid or obstacle list, try to draw them
-                if hasattr(est.map, 'obstacles'):
-                    for obs in est.map.obstacles:
-                        xs, ys = zip(*obs)
-                        self.ax.fill(xs, ys, alpha=0.5)
+    est = EST(start_point, start_state, goal, quad)
 
-        self.ax.set_aspect('equal', adjustable='box')
-        self.ax.set_xlabel('x')
-        self.ax.set_ylabel('y')
-        self.ax.set_title('EST search tree (live)')
-        self.ax.legend()
+    # --- Setup figure ---
+    fig, ax = plt.subplots()
+    est.map.display(ax)
+    ax.scatter([start_point[0]], [start_point[1]], c="green", s=80, label="Start")
+    ax.scatter([goal[0]], [goal[1]], c="red", s=80, label="Goal")
+    ax.legend()
 
-    def init_plot(self):
-        V = np.array(list(self.est.V)) if len(self.est.V) > 0 else np.zeros((0, 2))
-        if V.shape[0] > 0:
-            self.sc_vertices = self.ax.scatter(V[:, 0], V[:, 1], s=10, label='vertices', zorder=2)
-        else:
-            self.sc_vertices = self.ax.scatter([], [], s=10, label='vertices', zorder=2)
-        return [self.sc_vertices]
+    # Storage for drawn tree lines
+    tree_lines = []
 
-    def update(self, frame):
-        # perform one EST step
-        if self.iter >= self.max_iters:
-            return []
-        info = est_step(self.est)
-        self.iter += 1
+    # Path lines
+    final_path_line, = ax.plot([], [], "r-", linewidth=3)
 
-        # update vertex scatter
-        try:
-            V = np.array(list(self.est.V)) if len(self.est.V) > 0 else np.zeros((0, 2))
-            if V.shape[0] > 0:
-                self.sc_vertices.set_offsets(V)
-        except Exception:
-            pass
+    plt.ion()
+    plt.show()
 
-        # clear existing lines and redraw all edges (simple approach)
-        # remove old lines
-        for ln in self.lines:
-            try:
-                ln.remove()
-            except Exception:
-                pass
-        self.lines = []
+    # --- Run EST with live animation ---
+    for event in est.search(max_iterations=100000):
 
-        # draw tree edges from est.E_points
-        try:
-            for child, pts in getattr(self.est, 'E_points', {}).items():
-                pts_arr = np.array(pts)
-                # single polyline per extension
-                ln, = self.ax.plot(pts_arr[:, 0], pts_arr[:, 1], linewidth=0.8, alpha=0.7)
-                self.lines.append(ln)
-        except Exception:
-            pass
+        if event[0] == "extend":
+            parent, child = event[1], event[2]
+            x_new_points = est.E_points[child]
+            # Full curved trajectory
+            xs = [p[0] for p in x_new_points]
+            ys = [p[1] for p in x_new_points]
 
-        # draw latest extension brighter
-        if info['added'] and info['path_points']:
-            try:
-                pts_arr = np.array(info['path_points'])
-                if self.latest_line is not None:
-                    try:
-                        self.latest_line.remove()
-                    except Exception:
-                        pass
-                self.latest_line, = self.ax.plot(pts_arr[:, 0], pts_arr[:, 1], linewidth=2.0, alpha=1.0, zorder=5)
-            except Exception:
-                pass
+            line, = ax.plot(xs, ys, color="orange", linewidth=1.0)
+            tree_lines.append(line)
 
-        # goal check: if reached, annotate and stop animation
-        if info['reached_goal']:
-            self.ax.set_title(f"Goal reached at iter {self.iter}!")
-            print('Goal reached; stopping animation')
-            self.anim.event_source.stop()
+            plt.pause(0.001)
 
-        return [self.sc_vertices] + self.lines + ([self.latest_line] if self.latest_line is not None else [])
+            # Optional: fade older tree edges
+            if len(tree_lines) > 1:
+                tree_lines[-2].set_color("blue")
 
-    def run(self, interval=20):
-        self.anim = animation.FuncAnimation(self.fig, self.update, init_func=self.init_plot,
-                                            frames=self.max_iters, interval=interval, blit=False)
-        plt.show()
+        elif event[0] == "goal":
+            print("Goal reached!")
+
+            # Extract final path
+            x = [pt[0] for pt in est.path]
+            y = [pt[1] for pt in est.path]
 
 
-if __name__ == '__main__':
-    # Example usage: create a default quad and EST if available in user's environment.
-    try:
-        from quad_w_load_dyn_2D import quad_w_load_dyn
-        quad = quad_w_load_dyn()
-        start_state = np.zeros((quad.n_states, 1))
-        start_state[0:quad.n_states] = quad.x.copy()
-        start_state[0:2] = np.array([[25],[50]])
-        start_point = (25,50)
-        goal = (75,50)
-        seed = np.random.randint(0, 10000)
-        est = EST(start_point, start_state, goal, quad, seed=seed)
-    except Exception as e:
-        print('Could not auto-create EST (import error). Please create an EST instance yourself and call ESTAnimator(est).run()')
-        raise
+            final_path_line.set_data(x, y)
+            final_path_line.set_color("red")
+            final_path_line.set_linewidth(3)
+            #save animation as gif  
+            ani.save("est_animation.gif", writer="imagemagick")
 
-    animator = ESTAnimator(est, max_iters=2000)
-    animator.run(interval=30)
+
+            plt.pause(1)
+            break
+
+
+
+    plt.ioff()
+    plt.show()
