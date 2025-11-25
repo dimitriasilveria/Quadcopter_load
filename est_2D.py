@@ -6,7 +6,6 @@ from scipy.spatial import cKDTree
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-
 class EST():
     def __init__(self, start_point, start_state, goal, quad):
         self.start = start_point
@@ -31,19 +30,21 @@ class EST():
         self.max_u = np.vstack((max_tau, max_thrust))
 
     def steer(self,x0, tau, f):
-        N = 10
-        points = np.zeros((N, self.quad.n_states))
-        points[0,] = x0.flatten()
+        N = 100
+        points = np.zeros((self.quad.n_states, N))
+        points[:,0] = x0.flatten()
         x = x0
         for i in range(1, N):
+            if i != 1:
+                tau = 0
             x = self.quad.runge_kutta_step(x, f, tau)
-            points[i,0:self.quad.n_states] = x.flatten()
+            points[:,i] = x.flatten()
         return points
         
     def sample_actuation(self):
         tau = np.random.uniform(self.min_u[0], self.max_u[0])
         f = np.random.uniform(self.min_u[1], self.max_u[1])
-        return tau.reshape((1,1)), f
+        return tau, f
     
     def update_proximity(self, x_new):
         tree = cKDTree(self.V)
@@ -65,27 +66,29 @@ class EST():
         return sampled_vertex
     
     def search(self, max_iterations=1000):
+        np.random.seed(120)
         for it in range(max_iterations):
             ic(it)
+           
             x_rand = self.sample()
             tau, f = self.sample_actuation()
             if x_rand == self.start:
                 x0 = self.start_state
             else:
-                x0 = self.E_states[x_rand][-1,:].reshape((self.quad.n_states,1))
+                x0 = self.E_states[x_rand][:,-1].reshape((self.quad.n_states,1))
             X_new = self.steer(x0, tau, f) # path from x_rand to x_new
-            x_new = tuple(X_new[-1,0:2])
+            x_new = (float(X_new[0,-1]), float(X_new[1,-1]))
             x_new_points = []
-            for point in X_new:
-                point_tuple = tuple(point[0:2])
+            for point in X_new.T:
+                point_tuple = (float(point[0]), float(point[1]))
                 x_new_points.append(point_tuple)
                 if not self.map.is_free(point_tuple):
                     ic("Collision detected, skipping this extension.")
                     break
-            else:
-                self.E_points[x_new] = x_new_points
-                self.E_states[x_new] = X_new
-                self.update_proximity(x_new)
+                elif x_new not in self.V:
+                    self.E_points[x_new] = x_new_points
+                    self.E_states[x_new] = X_new
+                    self.update_proximity(x_new)
                 if self.check_goal_reached(x_new):
                     ic("Goal reached!")
                     self.path = self.reconstruct_path(x_new)

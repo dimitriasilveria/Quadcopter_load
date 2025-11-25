@@ -119,12 +119,13 @@ class quad_w_load_dyn:
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
     f = 9.81*(quad.mq + quad.ml)+2  # thrust force
-    tau = 0.01
-    N = 200
+    tau = -0.01
+    N = 20
     t = np.linspace(0, N*quad.dt, N)
     Tau = np.array([np.zeros(N), np.sin(0.01*t), np.zeros(N)])
     f = 9.81*(quad.mq + quad.ml)  # thrust force
     Rot = np.zeros((2,2,N))
+    quad.x[0:2] = np.array([[10],[10]])
     X = np.zeros((4, N))
     # Xfull: full-state history, shape (n_states, N)
     Xfull = np.zeros((quad.n_states, N))
@@ -140,7 +141,7 @@ if __name__ == "__main__":
             f = 9.81*(quad.mq + quad.ml)+2  # thrust force
             # tau = np.array([[0],[-0.01],[0]])
         else: 
-            f = 9.81*(quad.mq + quad.ml)  # thrust force
+            f = 9.81*(quad.mq + quad.ml)+2  # thrust force
             tau = 0
         x = quad.runge_kutta_step(quad.x, f, tau)
         X[0:2,i] = x[0:2,0]
