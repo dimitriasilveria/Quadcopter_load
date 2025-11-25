@@ -147,83 +147,83 @@ if __name__ == "__main__":
         X[2:4,i] = quad.quad_position().flatten()
         Xfull[:,i] = x.flatten()
 
-# --- animation setup (2D yz plane) ---
-fig, ax = plt.subplots(figsize=(6,6))
-ax.set_xlabel('y (m)')
-ax.set_ylabel('z (m)')
-ax.set_title('Quadcopter + Pendulum (yz plane)')
-ax.set_aspect('equal', 'box')
+    # --- animation setup (2D yz plane) ---
+    fig, ax = plt.subplots(figsize=(6,6))
+    ax.set_xlabel('y (m)')
+    ax.set_ylabel('z (m)')
+    ax.set_title('Quadcopter + Pendulum (yz plane)')
+    ax.set_aspect('equal', 'box')
 
-all_y = np.hstack([X[0, :], X[2, :]])
-all_z = np.hstack([X[1, :], X[3, :]])
-pad = 0.3 + 0.1*quad.l
-ax.set_xlim(all_y.min() - pad, all_y.max() + pad)
-ax.set_ylim(all_z.min() - pad, all_z.max() + pad)
+    all_y = np.hstack([X[0, :], X[2, :]])
+    all_z = np.hstack([X[1, :], X[3, :]])
+    pad = 0.3 + 0.1*quad.l
+    ax.set_xlim(all_y.min() - pad, all_y.max() + pad)
+    ax.set_ylim(all_z.min() - pad, all_z.max() + pad)
 
-# trails and markers
-load_trail, = ax.plot([], [], lw=1, label='Load Trajectory')
-quad_trail, = ax.plot([], [], lw=1, label='Quad Trajectory')
-pend_line, = ax.plot([], [], lw=2)
-load_point, = ax.plot([], [], marker='o', markersize=6)
-quad_point, = ax.plot([], [], marker='s', markersize=8)
+    # trails and markers
+    load_trail, = ax.plot([], [], lw=1, label='Load Trajectory')
+    quad_trail, = ax.plot([], [], lw=1, label='Quad Trajectory')
+    pend_line, = ax.plot([], [], lw=2)
+    load_point, = ax.plot([], [], marker='o', markersize=6)
+    quad_point, = ax.plot([], [], marker='s', markersize=8)
 
-# oriented quad: arm line and two motor markers (created once)
-arm_line, = ax.plot([], [], lw=3, solid_capstyle='round', label='Quad arm')
-motor1_point, = ax.plot([], [], marker='o', ms=6)  # +L motor
-motor2_point, = ax.plot([], [], marker='o', ms=6)  # -L motor
+    # oriented quad: arm line and two motor markers (created once)
+    arm_line, = ax.plot([], [], lw=3, solid_capstyle='round', label='Quad arm')
+    motor1_point, = ax.plot([], [], marker='o', ms=6)  # +L motor
+    motor2_point, = ax.plot([], [], marker='o', ms=6)  # -L motor
 
-ax.legend(loc='upper right')
+    ax.legend(loc='upper right')
 
-# If you prefer to keep a list of quad-related artists, define it BEFORE update()
-quad_artists = [arm_line, motor1_point, motor2_point]  # optional, but fine to have
+    # If you prefer to keep a list of quad-related artists, define it BEFORE update()
+    quad_artists = [arm_line, motor1_point, motor2_point]  # optional, but fine to have
 
-def init():
-    load_trail.set_data([], [])
-    quad_trail.set_data([], [])
-    pend_line.set_data([], [])
-    load_point.set_data([], [])
-    quad_point.set_data([], [])
-    arm_line.set_data([], [])
-    motor1_point.set_data([], [])
-    motor2_point.set_data([], [])
-    return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
+    def init():
+        load_trail.set_data([], [])
+        quad_trail.set_data([], [])
+        pend_line.set_data([], [])
+        load_point.set_data([], [])
+        quad_point.set_data([], [])
+        arm_line.set_data([], [])
+        motor1_point.set_data([], [])
+        motor2_point.set_data([], [])
+        return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
 
-def update(i):
-    # load position (scalars -> pass as lists)
-    y_l, z_l = float(X[0, i]), float(X[1, i])
-    # quad position
-    y_q, z_q = float(X[2, i]), float(X[3, i])
+    def update(i):
+        # load position (scalars -> pass as lists)
+        y_l, z_l = float(X[0, i]), float(X[1, i])
+        # quad position
+        y_q, z_q = float(X[2, i]), float(X[3, i])
 
-    # pendulum line (quad -> load)
-    pend_line.set_data([y_q, y_l], [z_q, z_l])
+        # pendulum line (quad -> load)
+        pend_line.set_data([y_q, y_l], [z_q, z_l])
 
-    # trails
-    load_trail.set_data(X[0, :i+1], X[1, :i+1])
-    quad_trail.set_data(X[2, :i+1], X[3, :i+1])
+        # trails
+        load_trail.set_data(X[0, :i+1], X[1, :i+1])
+        quad_trail.set_data(X[2, :i+1], X[3, :i+1])
 
-    # points (single-point must be sequences)
-    load_point.set_data([y_l], [z_l])
-    quad_point.set_data([y_q], [z_q])
+        # points (single-point must be sequences)
+        load_point.set_data([y_l], [z_l])
+        quad_point.set_data([y_q], [z_q])
 
-    # --- oriented quad arm & motors using phi_q from Xfull ---
-    phi_q = float(Xfull[6, i])   # quad angle stored at index 6 in your state
-    u_y = np.cos(phi_q)
-    u_z = np.sin(phi_q)
+        # --- oriented quad arm & motors using phi_q from Xfull ---
+        phi_q = float(Xfull[6, i])   # quad angle stored at index 6 in your state
+        u_y = np.cos(phi_q)
+        u_z = np.sin(phi_q)
 
-    L = quad.L  # distance from center to motor along the body axis
-    m1_y = y_q +  L * u_y
-    m1_z = z_q +  L * u_z
-    m2_y = y_q -  L * u_y
-    m2_z = z_q -  L * u_z
+        L = quad.L  # distance from center to motor along the body axis
+        m1_y = y_q +  L * u_y
+        m1_z = z_q +  L * u_z
+        m2_y = y_q -  L * u_y
+        m2_z = z_q -  L * u_z
 
-    arm_line.set_data([m1_y, m2_y], [m1_z, m2_z])
-    motor1_point.set_data([m1_y], [m1_z])
-    motor2_point.set_data([m2_y], [m2_z])
+        arm_line.set_data([m1_y, m2_y], [m1_z, m2_z])
+        motor1_point.set_data([m1_y], [m1_z])
+        motor2_point.set_data([m2_y], [m2_z])
 
-    # return ALL artists that changed
-    return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
+        # return ALL artists that changed
+        return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
 
-anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=quad.dt*1000)
+    anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=quad.dt*1000)
 
-# In a script use plt.show(); in Jupyter use HTML(anim.to_jshtml())
-plt.show()
+    # In a script use plt.show(); in Jupyter use HTML(anim.to_jshtml())
+    plt.show()
