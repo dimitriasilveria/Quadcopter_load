@@ -279,10 +279,11 @@ if __name__ == '__main__':
         quad = quad_w_load_dyn()
         start_state = np.zeros((quad.n_states, 1))
         start_state[0:quad.n_states] = quad.x.copy()
-        start_state[0:2] = np.array([[10], [10]])
-        start_point = (10, 10)
-        goal = (20, 20)
-        est = EST(start_point, start_state, goal, quad)
+        start_state[0:2] = np.array([[25],[50]])
+        start_point = (25,50)
+        goal = (75,50)
+        seed = np.random.randint(0, 10000)
+        est = EST(start_point, start_state, goal, quad, seed=seed)
     except Exception as e:
         print('Could not auto-create EST (import error). Please create an EST instance yourself and call ESTAnimator(est).run()')
         raise

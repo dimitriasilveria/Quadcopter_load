@@ -119,8 +119,8 @@ class quad_w_load_dyn:
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
     f = 9.81*(quad.mq + quad.ml)+2  # thrust force
-    tau = -0.01
-    N = 20
+    tau = -0.1
+    N = 200
     t = np.linspace(0, N*quad.dt, N)
     Tau = np.array([np.zeros(N), np.sin(0.01*t), np.zeros(N)])
     f = 9.81*(quad.mq + quad.ml)  # thrust force

@@ -7,13 +7,14 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 class EST():
-    def __init__(self, start_point, start_state, goal, quad):
+    def __init__(self, start_point, start_state, goal, quad, seed=None):
+        self.seed = seed
         self.start = start_point
         self.start_state = start_state
         self.goal = goal
         self.quad = quad
-        self.map = Map(40,40,40)
-        # self.map.obstacles_one(30)
+        self.map = Map(100,100,100)
+        self.map.obstacles_one(30)
         self.path = []
         self.V = [start_point]
         self.E_points = {}
@@ -21,7 +22,7 @@ class EST():
         self.w = {start_point: 1.0}
         self.w_prime = {start_point: 1.0}
         self.delta = 10.0
-        self.goal_tol = 2.0
+        self.goal_tol = 10.0
         self.p = {start_point: 1.0}
         _, min_tau = self.quad.calc_min_torque_thrust()
         max_thrust, max_tau = self.quad.calc_max_torque_thrust()
@@ -30,7 +31,7 @@ class EST():
         self.max_u = np.vstack((max_tau, max_thrust))
 
     def steer(self,x0, tau, f):
-        N = 100
+        N = 200
         points = np.zeros((self.quad.n_states, N))
         points[:,0] = x0.flatten()
         x = x0
@@ -42,7 +43,7 @@ class EST():
         return points
         
     def sample_actuation(self):
-        tau = np.random.uniform(self.min_u[0], self.max_u[0])
+        tau = np.random.uniform(self.min_u[0]/2, self.max_u[0]/2)
         f = np.random.uniform(self.min_u[1], self.max_u[1])
         return tau, f
     
@@ -66,7 +67,7 @@ class EST():
         return sampled_vertex
     
     def search(self, max_iterations=1000):
-        np.random.seed(120)
+        np.random.seed(self.seed)
         for it in range(max_iterations):
             ic(it)
            
@@ -109,9 +110,9 @@ if __name__ == "__main__":
     quad = quad_w_load_dyn()
     start_state = np.zeros((quad.n_states,1))
     start_state[0:quad.n_states] = quad.x.copy()
-    start_state[0:2] = np.array([[10],[10]])
-    start_point = (10,10)
-    goal = (20,20)
+    start_state[0:2] = np.array([[25],[50]])
+    start_point = (25,50)
+    goal = (75,50)
     est = EST(start_point, start_state, goal, quad)
     est.search(100000)
     ic(len(est.path))
