@@ -145,7 +145,7 @@ if __name__ == "__main__":
     plt.show()
 
     frames = []
-    capture_every = 100
+    capture_every = 50
     frame_count = 0
 
     # --- run search ---
@@ -163,14 +163,13 @@ if __name__ == "__main__":
             py = [p[1] for p in est.path]
             ax.plot(px, py, color="red", linewidth=3, zorder=10)
             fig.canvas.draw()
-            plt.pause(0.5)  # small pause to show final path
+            plt.pause(3)  # small pause to show final path
             # capture frame for GIF
             frame_count += 1
-            if frame_count % capture_every == 0:
-                w, h = fig.canvas.get_width_height()
-                img = np.frombuffer(fig.canvas.tostring_argb(), dtype='uint8').reshape((h, w, 4))
-                img = img[:, :, [1, 2, 3]].copy()  # ARGB -> RGB
-                frames.append(img)
+            w, h = fig.canvas.get_width_height()
+            img = np.frombuffer(fig.canvas.tostring_argb(), dtype='uint8').reshape((h, w, 4))
+            img = img[:, :, [1, 2, 3]].copy()  # ARGB -> RGB
+            frames.append(img)
             break  # <- stop the loop immediately
 
         # capture frame for GIF
@@ -191,7 +190,7 @@ if __name__ == "__main__":
     plt.ioff()
     # --- SAVE GIF AFTER CLOSING FIGURE ---
     if len(frames) > 0:
-        gif_name = "est_run_mod.gif"
+        gif_name = "est_run_mod2.gif"
         fps = 20
         imageio.mimsave(gif_name, frames, fps=fps)
         print(f"Saved GIF: {gif_name}  (frames={len(frames)})")
@@ -279,12 +278,12 @@ if __name__ == "__main__":
         arm_line.set_data([m1_y, m2_y], [m1_z, m2_z])
         motor1_point.set_data([m1_y], [m1_z])
         motor2_point.set_data([m2_y], [m2_z])
-        plt.pause(0.0001)
+        # plt.pause(0.0001)
 
         # return ALL artists that changed
         return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
 
-    anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=quad.dt*1000)
-    anim.save("quad_pendulum_est_mod.gif", writer="pillow", fps=30)
+    anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=quad.dt*100)
+    anim.save("quad_pendulum_est_mod2.gif", writer="pillow", fps=30)
     # In a script use plt.show(); in Jupyter use HTML(anim.to_jshtml())
     plt.show()

@@ -7,6 +7,7 @@ class Map:
         self.height = height
         self.step = step
         self.obstacles = []
+        self.obs_buffer = 0.5 # buffer around obstacles
 
     def add_obstacle(self, obstacle):
         self.obstacles.append(obstacle)
@@ -34,14 +35,20 @@ class Map:
 
     #example [(x1, y1), (x2, y2)]
     #where (x1, y1) is bottom-left and (x2, y2) is top-right
+
     def is_free(self, point):
-        if point[0] < 0 or point[0] > self.width or point[1] < 0 or point[1] > self.height:
+        x, y = point
+        # check bounds first
+        if x < 0 or x > self.width or y < 0 or y > self.height:
             return False
+        # check against each obstacle expanded by obs_buffer
         for obs in self.obstacles:
-            if point[0] >= obs[0][0] and point[1] >= obs[0][1] and point[0] <= obs[1][0] and point[1] <= obs[1][1]:
+            x1, y1 = obs[0]
+            x2, y2 = obs[1]
+            if x >= (x1 - self.obs_buffer) and y >= (y1 - self.obs_buffer) and x <= (x2 + self.obs_buffer) and y <= (y2 + self.obs_buffer):
                 return False
         return True
-
+    
     def is_valid(self, q_nearest, q_new):
         if not self.is_free(q_new):
             return False
