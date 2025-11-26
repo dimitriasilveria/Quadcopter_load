@@ -7,7 +7,7 @@ class Map:
         self.height = height
         self.step = step
         self.obstacles = []
-        self.obs_buffer = 0.5 # buffer around obstacles
+        self.obs_buffer = 0.25 # buffer around obstacles
 
     def add_obstacle(self, obstacle):
         self.obstacles.append(obstacle)
@@ -16,22 +16,26 @@ class Map:
         self.add_obstacle([(4.5, l), (5.5, self.height-l)])
 
     def obstacles_two(self):
-        self.add_obstacle([(10, 35), (15, 49)])
-        self.add_obstacle([(15, 35), (35, 40)])
-        self.add_obstacle([(35, 35), (40, 65)])
-        self.add_obstacle([(10, 51), (15, 65)])
-        self.add_obstacle([(15, 60), (35, 65)])
+        self.add_obstacle([(1.0, 3.5), (1.5, 4.9)])
+        self.add_obstacle([(1.5, 3.5), (3.5, 4.0)])
+        self.add_obstacle([(3.5, 3.5), (4.0, 6.5)])
+        self.add_obstacle([(1.0, 5.7), (1.5, 6.5)])
+        self.add_obstacle([(1.5, 6.0), (3.5, 6.5)])
 
     def obstacles_three(self):
-        self.add_obstacle([(60, 35), (65, 65)])
-        self.add_obstacle([(65, 60), (85, 65)])
-        self.add_obstacle([(85, 51), (90, 65)])
-        self.add_obstacle([(60, 35), (85, 40)])
-        self.add_obstacle([(85, 35), (90, 49)])
+        self.add_obstacle([(6.0, 3.5), (6.5, 6.5)])
+        self.add_obstacle([(6.5, 6.0), (8.5, 6.5)])
+        self.add_obstacle([(8.5, 5.1), (9.0, 6.5)])
+        self.add_obstacle([(6.0, 3.5), (8.5, 4.0)])
+        self.add_obstacle([(8.5, 3.5), (9.0, 4.9)])
 
     def obstacles_four(self):
         self.obstacles_two()
         self.obstacles_three()
+
+    def obstacles_five(self, l):
+        self.add_obstacle([(0, self.height/2 - l/2), (self.width/2, self.height/2 - l/2 - 0.01*self.height)])
+        self.add_obstacle([(self.width/2, self.height/2 + l/2 + 0.01*self.height), (self.width, self.height/2 + l/2)])
 
     #example [(x1, y1), (x2, y2)]
     #where (x1, y1) is bottom-left and (x2, y2) is top-right
@@ -74,19 +78,23 @@ class Map:
         # plt.show()
 
 if __name__ == "__main__":
-    m = Map(100, 100)
-    m.obstacles_one(30)
+    # m = Map(10, 10)
+    # m.obstacles_one(3)
+    # m.display()
+
+    # m2 = Map(10, 10)
+    # m2.obstacles_two()
+    # m2.display()
+
+    # m3 = Map(10, 10)
+    # m3.obstacles_three()
+    # m3.display()
+    # plt.show()
+
+    # m4 = Map(10, 10)
+    # m4.obstacles_four()
+    # m4.display()
+    m = Map(10, 10)
+    m.obstacles_five(2)
     m.display()
-
-    m2 = Map(100, 100)
-    m2.obstacles_two()
-    m2.display()
-
-    m3 = Map(100, 100)
-    m3.obstacles_three()
-    m3.display()
     plt.show()
-
-    m4 = Map(100, 100)
-    m4.obstacles_four()
-    m4.display()

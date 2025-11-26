@@ -2,7 +2,9 @@ import numpy as np
 from quad_w_load_dyn_2D import quad_w_load_dyn
 from icecream import ic
 from Maps2d import Map
-from scipy.spatial import cKDTree 
+from scipy.spatial import cKDTree
+import matplotlib 
+matplotlib.use("Agg")   # no GUI, no figure windows will appear
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 # Option 1: import the class directly
@@ -18,21 +20,25 @@ class EST():
         self.goal = goal
         self.quad = quad
         self.map = Map(10,10,10)
-        self.map.obstacles_one(3)
+        self.map.obstacles_five(2)
+        # self.map.obstacles_one(3)
+        # self.map.obstacles_two()
         self.path = []
         self.states_path = [start_state]
         self.V = [start_point]
         self.E_points = {}
-        self.E_states = {}
+        self.E_commands = {start_point: (0, 9.81*(self.quad.mq + self.quad.ml))}
+        self.E_states = {start_point: start_state}
         self.w = {start_point: 1.0}
         self.w_prime = {start_point: 1.0}
-        self.delta = 1.0
+        self.delta = 2.0
         self.goal_tol = 1.5
         self.p = {start_point: 1.0}
         min_thrust, min_tau = self.quad.calc_min_torque_thrust()
         max_thrust, max_tau = self.quad.calc_max_torque_thrust()
         self.min_u = np.vstack((min_tau, min_thrust))
         self.max_u = np.vstack((max_tau, max_thrust))
+        self.gif_folder = "gifs"
 
     def steer(self,x0, tau, f):
         N = 30
@@ -46,17 +52,33 @@ class EST():
             points[:,i] = x.flatten()
         return points
         
-    def sample_actuation(self):
-        tau = np.random.uniform(self.min_u[0]/3, self.max_u[0]/3)
+    def sample_actuation(self, x_rand):
+        # (tau, f) = self.E_commands[x_rand]
+        # percent = 0.7
+        # if tau == 0:
+        #     tau = np.random.uniform(self.min_u[0]/2, self.max_u[0]/2)
+        # else:
+        #     tau = np.random.uniform(tau*(1-percent), tau*(1+percent))
+        #     tau = np.clip(tau, self.min_u[0], self.max_u[0])
+        # if f == 0:
+        #     f = np.random.uniform(self.min_u[1], self.max_u[1])
+        # else:
+        #     f = np.random.uniform(f*(1-percent), f*(1+percent))
+        #     f = np.clip(f, self.min_u[1], self.max_u[1])
+        tau = np.random.uniform(self.min_u[0]/2, self.max_u[0]/2)
         f = np.random.uniform(self.min_u[1], self.max_u[1])
+
         return tau, f
     
-    def update_proximity(self, x_new):
+    def update_proximity(self, x_new, it):
         tree = cKDTree(self.V)
         indices = tree.query_ball_point(x_new, r=self.delta, return_sorted=True)
         n = len(indices)
         self.w[x_new] = n
         self.V.append(x_new)
+        for index in indices:
+            neighbor = self.V[index]
+            self.w[neighbor] += 1*it  # increase weight of neighbors
         max_w = max(self.w.values())
         for vertex in self.V:
             self.w_prime[vertex] = max_w - self.w[vertex] + 1
@@ -74,7 +96,7 @@ class EST():
         np.random.seed(self.seed)
         for it in range(max_iterations):
             x_rand = self.sample()
-            tau, f = self.sample_actuation()
+            tau, f = self.sample_actuation(x_rand)
 
             if x_rand == self.start:
                 x0 = self.start_state
@@ -96,11 +118,12 @@ class EST():
             if is_free and x_new not in self.V:
                 self.E_points[x_new] = x_new_points
                 self.E_states[x_new] = X_new
+                # self.E_commands[x_new] = (tau, f)
 
                 # Parent = first point
                 parent = x_new_points[0]
 
-                self.update_proximity(x_new)
+                self.update_proximity(x_new, it)
 
                 # Yield for animation
                 yield ("extend", parent, x_new)
@@ -124,14 +147,13 @@ class EST():
     def check_goal_reached(self, x):
         return np.linalg.norm(np.array(x) - np.array(self.goal)) < self.goal_tol
 
-
-if __name__ == "__main__":
+def search_animate():
     quad = quad_w_load_dyn()
     start_state = np.zeros((quad.n_states,1))
     start_state[0:quad.n_states] = quad.x.copy()
-    start_state[0:2] = np.array([[2.5],[5.0]])
-    start_point = (2.5,5.0)
-    goal = (7.5,5.0)
+    start_point = (5.0,2.0)
+    start_state[0:2] = np.array([[start_point[0]],[start_point[1]]])
+    goal = (5.0,8.0)
     est = EST(start_point, start_state, goal, quad)
 
     fig, ax = plt.subplots()
@@ -142,14 +164,14 @@ if __name__ == "__main__":
     plt.tight_layout()
 
     plt.ion()
-    plt.show()
+    # plt.show()
 
     frames = []
     capture_every = 50
     frame_count = 0
 
     # --- run search ---
-    for event in est.search(max_iterations=200000):
+    for event in est.search(max_iterations=1000000):
         if event[0] == "extend":
             parent, child = event[1], event[2]
             pts = est.E_points[child]
@@ -170,6 +192,16 @@ if __name__ == "__main__":
             img = np.frombuffer(fig.canvas.tostring_argb(), dtype='uint8').reshape((h, w, 4))
             img = img[:, :, [1, 2, 3]].copy()  # ARGB -> RGB
             frames.append(img)
+            # --- CLOSE THE FIGURE IMMEDIATELY ---
+            plt.close(fig)  # <- figure disappears immediately
+            plt.ioff()
+            # --- SAVE GIF AFTER CLOSING FIGURE ---
+            if len(frames) > 0:
+                gif_name = f"{est.gif_folder}/est_run_mod_comp.gif"
+                fps = 20
+                imageio.mimsave(gif_name, frames, fps=fps)
+                print(f"Saved GIF: {gif_name}  (frames={len(frames)})")
+
             break  # <- stop the loop immediately
 
         # capture frame for GIF
@@ -185,15 +217,6 @@ if __name__ == "__main__":
         fig.canvas.flush_events()
         plt.pause(0.0005)
 
-    # --- CLOSE THE FIGURE IMMEDIATELY ---
-    plt.close(fig)  # <- figure disappears immediately
-    plt.ioff()
-    # --- SAVE GIF AFTER CLOSING FIGURE ---
-    if len(frames) > 0:
-        gif_name = "est_run_mod2.gif"
-        fps = 20
-        imageio.mimsave(gif_name, frames, fps=fps)
-        print(f"Saved GIF: {gif_name}  (frames={len(frames)})")
 
     # code continues immediately here
     print("Animation finished, figure closed, code continues!")
@@ -284,6 +307,10 @@ if __name__ == "__main__":
         return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
 
     anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=quad.dt*100)
-    anim.save("quad_pendulum_est_mod2.gif", writer="pillow", fps=30)
+    anim.save(f"{est.gif_folder}/quad_pendulum_est_mod_comp.gif", writer="pillow", fps=30)
+    return
     # In a script use plt.show(); in Jupyter use HTML(anim.to_jshtml())
-    plt.show()
+    # plt.show()
+if __name__ == "__main__":
+    for i in range(100):
+        search_animate()

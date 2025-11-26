@@ -39,7 +39,7 @@ class quad_w_load_dyn:
         self.kf = 6.11e-8  # thrust constant
         self.L = 0.175  # distance from the center to each motor
         self.w_max = 7800  # maximum motor speed in RPM
-        self.w_min = 00     # minimum motor speed in RPM
+        self.w_min = 1200     # minimum motor speed in RPM
 
     # def x_l_dot(self):
     #     """Compute the time derivative of the load position."""
@@ -106,6 +106,7 @@ class quad_w_load_dyn:
             x0 = sol.y[:, -1].reshape((self.n_states,1))
         else:
             x0 = sol.y.reshape((self.n_states,1))
+        x0[6,0] = np.clip(x0[6,0], -np.pi/4, np.pi/4)  # keep angles within -pi/4 to pi/4
         self.x = x0
         return x0
     
