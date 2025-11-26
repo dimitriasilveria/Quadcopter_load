@@ -70,7 +70,7 @@ class EST():
 
         return tau, f
     
-    def update_proximity(self, x_new, it):
+    def update_proximity(self, x_new,):
         tree = cKDTree(self.V)
         indices = tree.query_ball_point(x_new, r=self.delta, return_sorted=True)
         n = len(indices)
@@ -78,7 +78,7 @@ class EST():
         self.V.append(x_new)
         for index in indices:
             neighbor = self.V[index]
-            self.w[neighbor] += 1*it  # increase weight of neighbors
+            self.w[neighbor] += 100  # increase weight of neighbors
         max_w = max(self.w.values())
         for vertex in self.V:
             self.w_prime[vertex] = max_w - self.w[vertex] + 1
@@ -123,7 +123,7 @@ class EST():
                 # Parent = first point
                 parent = x_new_points[0]
 
-                self.update_proximity(x_new, it)
+                self.update_proximity(x_new)
 
                 # Yield for animation
                 yield ("extend", parent, x_new)
