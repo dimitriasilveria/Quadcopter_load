@@ -5,6 +5,10 @@ from Maps2d import Map
 from scipy.spatial import cKDTree 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+# Option 1: import the class directly
+from matplotlib.animation import FuncAnimation
+
+import imageio
 
 class EST():
     def __init__(self, start_point, start_state, goal, quad, seed=None):
@@ -13,8 +17,8 @@ class EST():
         self.start_state = start_state
         self.goal = goal
         self.quad = quad
-        self.map = Map(100,100,100)
-        self.map.obstacles_one(30)
+        self.map = Map(10,10,10)
+        self.map.obstacles_one(3)
         self.path = []
         self.states_path = [start_state]
         self.V = [start_point]
@@ -22,17 +26,16 @@ class EST():
         self.E_states = {}
         self.w = {start_point: 1.0}
         self.w_prime = {start_point: 1.0}
-        self.delta = 10.0
-        self.goal_tol = 10.0
+        self.delta = 1.0
+        self.goal_tol = 1.5
         self.p = {start_point: 1.0}
-        _, min_tau = self.quad.calc_min_torque_thrust()
+        min_thrust, min_tau = self.quad.calc_min_torque_thrust()
         max_thrust, max_tau = self.quad.calc_max_torque_thrust()
-        min_thrust = (self.quad.ml + self.quad.mq) * self.quad.g
         self.min_u = np.vstack((min_tau, min_thrust))
         self.max_u = np.vstack((max_tau, max_thrust))
 
     def steer(self,x0, tau, f):
-        N = 100
+        N = 30
         points = np.zeros((self.quad.n_states, N))
         points[:,0] = x0.flatten()
         x = x0
@@ -44,7 +47,7 @@ class EST():
         return points
         
     def sample_actuation(self):
-        tau = np.random.uniform(self.min_u[0]/2, self.max_u[0]/2)
+        tau = np.random.uniform(self.min_u[0]/3, self.max_u[0]/3)
         f = np.random.uniform(self.min_u[1], self.max_u[1])
         return tau, f
     
@@ -121,71 +124,167 @@ class EST():
     def check_goal_reached(self, x):
         return np.linalg.norm(np.array(x) - np.array(self.goal)) < self.goal_tol
 
+
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
     start_state = np.zeros((quad.n_states,1))
     start_state[0:quad.n_states] = quad.x.copy()
-    start_state[0:2] = np.array([[25],[50]])
-
-    start_point = (25,50)
-    goal = (75,50)
-
+    start_state[0:2] = np.array([[2.5],[5.0]])
+    start_point = (2.5,5.0)
+    goal = (7.5,5.0)
     est = EST(start_point, start_state, goal, quad)
 
-    # --- Setup figure ---
     fig, ax = plt.subplots()
     est.map.display(ax)
-    ax.scatter([start_point[0]], [start_point[1]], c="green", s=80, label="Start")
-    ax.scatter([goal[0]], [goal[1]], c="red", s=80, label="Goal")
-    ax.legend()
-
-    # Storage for drawn tree lines
-    tree_lines = []
-
-    # Path lines
-    final_path_line, = ax.plot([], [], "r-", linewidth=3)
+    ax.scatter([start_point[0]], [start_point[1]], c="green", s=80, zorder=5)
+    ax.scatter([goal[0]], [goal[1]], c="red", s=80, zorder=5)
+    plt.title("EST Search (live)")
+    plt.tight_layout()
 
     plt.ion()
     plt.show()
 
-    # --- Run EST with live animation ---
-    for event in est.search(max_iterations=100000):
+    frames = []
+    capture_every = 100
+    frame_count = 0
 
+    # --- run search ---
+    for event in est.search(max_iterations=200000):
         if event[0] == "extend":
             parent, child = event[1], event[2]
-            x_new_points = est.E_points[child]
-            # Full curved trajectory
-            xs = [p[0] for p in x_new_points]
-            ys = [p[1] for p in x_new_points]
-
-            line, = ax.plot(xs, ys, color="orange", linewidth=1.0)
-            tree_lines.append(line)
-
-            plt.pause(0.001)
-
-            # Optional: fade older tree edges
-            if len(tree_lines) > 1:
-                tree_lines[-2].set_color("blue")
+            pts = est.E_points[child]
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            ax.plot(xs, ys, color="orange", linewidth=1, zorder=1)
 
         elif event[0] == "goal":
-            print("Goal reached!")
+            # final path in red
+            px = [p[0] for p in est.path]
+            py = [p[1] for p in est.path]
+            ax.plot(px, py, color="red", linewidth=3, zorder=10)
+            fig.canvas.draw()
+            plt.pause(0.5)  # small pause to show final path
+            # capture frame for GIF
+            frame_count += 1
+            if frame_count % capture_every == 0:
+                w, h = fig.canvas.get_width_height()
+                img = np.frombuffer(fig.canvas.tostring_argb(), dtype='uint8').reshape((h, w, 4))
+                img = img[:, :, [1, 2, 3]].copy()  # ARGB -> RGB
+                frames.append(img)
+            break  # <- stop the loop immediately
 
-            # Extract final path
-            x = [pt[0] for pt in est.path]
-            y = [pt[1] for pt in est.path]
+        # capture frame for GIF
+        frame_count += 1
+        if frame_count % capture_every == 0:
+            w, h = fig.canvas.get_width_height()
+            img = np.frombuffer(fig.canvas.tostring_argb(), dtype='uint8').reshape((h, w, 4))
+            img = img[:, :, [1, 2, 3]].copy()  # ARGB -> RGB
+            frames.append(img)
 
+        # update figure live
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+        plt.pause(0.0005)
 
-            final_path_line.set_data(x, y)
-            final_path_line.set_color("red")
-            final_path_line.set_linewidth(3)
-            #save animation as gif  
-            ani.save("est_animation.gif", writer="imagemagick")
+    # --- CLOSE THE FIGURE IMMEDIATELY ---
+    plt.close(fig)  # <- figure disappears immediately
+    plt.ioff()
+    # --- SAVE GIF AFTER CLOSING FIGURE ---
+    if len(frames) > 0:
+        gif_name = "est_run_mod.gif"
+        fps = 20
+        imageio.mimsave(gif_name, frames, fps=fps)
+        print(f"Saved GIF: {gif_name}  (frames={len(frames)})")
 
+    # code continues immediately here
+    print("Animation finished, figure closed, code continues!")
 
-            plt.pause(1)
-            break
+    Xfull = np.hstack(est.states_path)
+    N = Xfull.shape[1]
+    X_load_quad = np.zeros((4, N))
+    X_load_quad[0:2, :] = Xfull[0:2, :]
+    for i in range(N):
+        x_l = Xfull[0:2, i].reshape((2,1))
+        x_q = x_l + quad.l * np.array([[-np.sin(Xfull[4, i])],[np.cos(Xfull[4, i])]])
+        X_load_quad[2:4, i] = x_q.flatten()
 
-
+    # --- animation setup (2D yz plane) ---
+    fig, ax = plt.subplots()
+    est.map.display(ax)
+    ax.scatter([start_point[0]], [start_point[1]], c="green", s=80, zorder=5)
+    ax.scatter([goal[0]], [goal[1]], c="red", s=80, zorder=5)
+    plt.title("EST Search (live)")
+    plt.tight_layout()
 
     plt.ioff()
+
+    all_y = np.hstack([X_load_quad[0, :], X_load_quad[2, :]])
+    all_z = np.hstack([X_load_quad[1, :], X_load_quad[3, :]])
+    # trails and markers
+    load_trail, = ax.plot([], [], lw=1, label='Load Trajectory')
+    quad_trail, = ax.plot([], [], lw=1, label='Quad Trajectory')
+    pend_line, = ax.plot([], [], lw=2)
+    load_point, = ax.plot([], [], marker='o', markersize=6)
+    quad_point, = ax.plot([], [], marker='s', markersize=8)
+
+    # oriented quad: arm line and two motor markers (created once)
+    arm_line, = ax.plot([], [], lw=3, solid_capstyle='round', label='Quad arm')
+    motor1_point, = ax.plot([], [], marker='o', ms=6)  # +L motor
+    motor2_point, = ax.plot([], [], marker='o', ms=6)  # -L motor
+
+    ax.legend(loc='upper right')
+
+    # If you prefer to keep a list of quad-related artists, define it BEFORE update()
+    quad_artists = [arm_line, motor1_point, motor2_point]  # optional, but fine to have
+
+    def init():
+        load_trail.set_data([], [])
+        quad_trail.set_data([], [])
+        pend_line.set_data([], [])
+        load_point.set_data([], [])
+        quad_point.set_data([], [])
+        arm_line.set_data([], [])
+        motor1_point.set_data([], [])
+        motor2_point.set_data([], [])
+        return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
+
+    def update(i):
+        # load position (scalars -> pass as lists)
+        y_l, z_l = float(X_load_quad[0, i]), float(X_load_quad[1, i])
+        # quad position
+        y_q, z_q = float(X_load_quad[2, i]), float(X_load_quad[3, i])
+
+        # pendulum line (quad -> load)
+        pend_line.set_data([y_q, y_l], [z_q, z_l])
+
+        # trails
+        load_trail.set_data(X_load_quad[0, :i+1], X_load_quad[1, :i+1])
+        quad_trail.set_data(X_load_quad[2, :i+1], X_load_quad[3, :i+1])
+
+        # points (single-point must be sequences)
+        load_point.set_data([y_l], [z_l])
+        quad_point.set_data([y_q], [z_q])
+
+        # --- oriented quad arm & motors using phi_q from Xfull ---
+        phi_q = float(Xfull[6, i])   # quad angle stored at index 6 in your state
+        u_y = np.cos(phi_q)
+        u_z = np.sin(phi_q)
+
+        L = quad.L  # distance from center to motor along the body axis
+        m1_y = y_q +  L * u_y
+        m1_z = z_q +  L * u_z
+        m2_y = y_q -  L * u_y
+        m2_z = z_q -  L * u_z
+
+        arm_line.set_data([m1_y, m2_y], [m1_z, m2_z])
+        motor1_point.set_data([m1_y], [m1_z])
+        motor2_point.set_data([m2_y], [m2_z])
+        plt.pause(0.0001)
+
+        # return ALL artists that changed
+        return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
+
+    anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=quad.dt*1000)
+    anim.save("quad_pendulum_est_mod.gif", writer="pillow", fps=30)
+    # In a script use plt.show(); in Jupyter use HTML(anim.to_jshtml())
     plt.show()

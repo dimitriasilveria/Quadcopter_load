@@ -13,8 +13,8 @@ class EST():
         self.start_state = start_state
         self.goal = goal
         self.quad = quad
-        self.map = Map(100,100,100)
-        # self.map.obstacles_one(30)
+        self.map = Map(10,10,10)
+        self.map.obstacles_one(30)
         self.path = []
         self.states_path = [start_state]
         self.V = [start_point]

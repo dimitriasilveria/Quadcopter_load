@@ -12,7 +12,7 @@ class Map:
         self.obstacles.append(obstacle)
 
     def obstacles_one(self,l):
-        self.add_obstacle([(45, l), (55, self.height-l)])
+        self.add_obstacle([(4.5, l), (5.5, self.height-l)])
 
     def obstacles_two(self):
         self.add_obstacle([(10, 35), (15, 49)])

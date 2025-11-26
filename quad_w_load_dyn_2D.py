@@ -17,10 +17,10 @@ class quad_w_load_dyn:
         '''
         0:2 position of load
         2:4 velocity of load
-        4 angular velocity of the load
-        5 angle of the load
-        6 angular velocity of the quadcopter
-        7 angle of the quadcopter
+        4 angle of the load
+        5 angular velocity of the load
+        6 angle of the quadcopter
+        7 angular velocity of the quadcopter
         '''
         self.mq = mass_quad  # mass of the quadcopter
         self.ml = mass_load  # mass of the load
@@ -39,7 +39,7 @@ class quad_w_load_dyn:
         self.kf = 6.11e-8  # thrust constant
         self.L = 0.175  # distance from the center to each motor
         self.w_max = 7800  # maximum motor speed in RPM
-        self.w_min = 1200     # minimum motor speed in RPM
+        self.w_min = 00     # minimum motor speed in RPM
 
     # def x_l_dot(self):
     #     """Compute the time derivative of the load position."""
