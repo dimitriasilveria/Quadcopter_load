@@ -20,8 +20,8 @@ class EST():
         self.goal = goal
         self.quad = quad
         self.map = Map(10,10,10)
-        self.map.obstacles_five(2)
-        # self.map.obstacles_one(3)
+        # self.map.obstacles_five(2)
+        self.map.obstacles_one(3)
         # self.map.obstacles_two()
         self.path = []
         self.states_path = [start_state]
@@ -147,14 +147,14 @@ class EST():
     def check_goal_reached(self, x):
         return np.linalg.norm(np.array(x) - np.array(self.goal)) < self.goal_tol
 
-def search_animate():
+def search_animate(seed):
     quad = quad_w_load_dyn()
     start_state = np.zeros((quad.n_states,1))
     start_state[0:quad.n_states] = quad.x.copy()
-    start_point = (5.0,2.0)
+    start_point = (5.5,2.0)
     start_state[0:2] = np.array([[start_point[0]],[start_point[1]]])
-    goal = (5.0,8.0)
-    est = EST(start_point, start_state, goal, quad)
+    goal = (2.5,7.0)
+    est = EST(start_point, start_state, goal, quad,seed)
 
     fig, ax = plt.subplots()
     est.map.display(ax)
@@ -171,7 +171,7 @@ def search_animate():
     frame_count = 0
 
     # --- run search ---
-    for event in est.search(max_iterations=1000000):
+    for event in est.search(max_iterations=100000):
         if event[0] == "extend":
             parent, child = event[1], event[2]
             pts = est.E_points[child]
@@ -197,7 +197,7 @@ def search_animate():
             plt.ioff()
             # --- SAVE GIF AFTER CLOSING FIGURE ---
             if len(frames) > 0:
-                gif_name = f"{est.gif_folder}/est_run_mod_comp.gif"
+                gif_name = f"{est.gif_folder}/est_run_mod_1.gif"
                 fps = 20
                 imageio.mimsave(gif_name, frames, fps=fps)
                 print(f"Saved GIF: {gif_name}  (frames={len(frames)})")
@@ -239,6 +239,7 @@ def search_animate():
     plt.tight_layout()
 
     plt.ioff()
+    # plt.show()
 
     all_y = np.hstack([X_load_quad[0, :], X_load_quad[2, :]])
     all_z = np.hstack([X_load_quad[1, :], X_load_quad[3, :]])
@@ -307,10 +308,11 @@ def search_animate():
         return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
 
     anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=quad.dt*100)
-    anim.save(f"{est.gif_folder}/quad_pendulum_est_mod_comp.gif", writer="pillow", fps=30)
-    return
-    # In a script use plt.show(); in Jupyter use HTML(anim.to_jshtml())
+    anim.save(f"{est.gif_folder}/quad_pendulum_est_mod_1.gif", writer="pillow", fps=30)
     # plt.show()
+    return
+
 if __name__ == "__main__":
     for i in range(100):
-        search_animate()
+        seed = i
+        search_animate(seed=i)

@@ -13,7 +13,8 @@ class Map:
         self.obstacles.append(obstacle)
 
     def obstacles_one(self,l):
-        self.add_obstacle([(4.5, l), (5.5, self.height-l)])
+        self.add_obstacle([(4.5, 0), (4.8, self.height-l)])
+        self.add_obstacle([(6.0, 0), (6.3, self.height-l)])
 
     def obstacles_two(self):
         self.add_obstacle([(1.0, 3.5), (1.5, 4.9)])
@@ -78,9 +79,9 @@ class Map:
         # plt.show()
 
 if __name__ == "__main__":
-    # m = Map(10, 10)
-    # m.obstacles_one(3)
-    # m.display()
+    m = Map(10, 10)
+    m.obstacles_one(3)
+    m.display()
 
     # m2 = Map(10, 10)
     # m2.obstacles_two()

@@ -107,6 +107,7 @@ class quad_w_load_dyn:
         else:
             x0 = sol.y.reshape((self.n_states,1))
         x0[6,0] = np.clip(x0[6,0], -np.pi/4, np.pi/4)  # keep angles within -pi/4 to pi/4
+        x0[4,0] = np.clip(x0[4,0], -np.pi, np.pi)
         self.x = x0
         return x0
     
@@ -120,7 +121,7 @@ class quad_w_load_dyn:
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
     f = 9.81*(quad.mq + quad.ml)+2  # thrust force
-    tau = -0.1
+    tau = -0.05
     N = 200
     t = np.linspace(0, N*quad.dt, N)
     Tau = np.array([np.zeros(N), np.sin(0.01*t), np.zeros(N)])
@@ -153,7 +154,7 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(figsize=(6,6))
     ax.set_xlabel('y (m)')
     ax.set_ylabel('z (m)')
-    ax.set_title('Quadcopter + Pendulum (yz plane)')
+    # ax.set_title('Quadcopter + Pendulum (yz plane)')
     ax.set_aspect('equal', 'box')
 
     all_y = np.hstack([X[0, :], X[2, :]])
@@ -174,7 +175,7 @@ if __name__ == "__main__":
     motor1_point, = ax.plot([], [], marker='o', ms=6)  # +L motor
     motor2_point, = ax.plot([], [], marker='o', ms=6)  # -L motor
 
-    ax.legend(loc='upper right')
+    # ax.legend(loc='upper right')
 
     # If you prefer to keep a list of quad-related artists, define it BEFORE update()
     quad_artists = [arm_line, motor1_point, motor2_point]  # optional, but fine to have
@@ -224,8 +225,9 @@ if __name__ == "__main__":
 
         # return ALL artists that changed
         return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
-
-    anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=quad.dt*1000)
+    gif_folder = "gifs"
+    anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=50)
+    anim.save(f"{gif_folder}/quad_pendulum.gif", writer="pillow", fps=30)
 
     # In a script use plt.show(); in Jupyter use HTML(anim.to_jshtml())
     plt.show()
