@@ -7,7 +7,6 @@ class Map:
         self.height = height
         self.step = step
         self.obstacles = []
-        self.obs_buffer = 0.25 # buffer around obstacles
 
     def add_obstacle(self, obstacle):
         self.obstacles.append(obstacle)
@@ -41,31 +40,93 @@ class Map:
     #example [(x1, y1), (x2, y2)]
     #where (x1, y1) is bottom-left and (x2, y2) is top-right
 
-    def is_free(self, point):
-        x, y = point
-        # check bounds first
-        if x < 0 or x > self.width or y < 0 or y > self.height:
+    def is_free(self, load, quad_pos, quad_length):
+        """
+        Check if load, quadcopter, cable, and motors are collision-free
+        """
+        x, y = load
+        qx, qy = quad_pos
+        
+        # 1. Check load position
+        if not self._is_point_free(x, y):
             return False
-        # check against each obstacle expanded by obs_buffer
+        
+        # 2. Check quadcopter center position
+        if not self._is_point_free(qx, qy):
+            return False
+        
+        # 3. Check cable (line between load and quad)
+        if not self._is_line_free(load, quad_pos):
+            return False
+        
+        # 4. Check quadcopter motors (assuming motors are at quad_length from center)
+        # For a planar quadcopter, check all 4 motor positions (or 2 if truly 1D)
+        motor_offsets = [
+            (quad_length, 0),   # right motor
+            (-quad_length, 0)
+        ]
+        
+        for dx, dy in motor_offsets:
+            mx, my = qx + dx, qy + dy
+            if not self._is_point_free(mx, my):
+                return False
+        
+        # 5. Optional: Check quadcopter body (treat as circle or rectangle)
+        # If quad has physical body, check intermediate points
+        # body_radius = quad_length * 0.5  # adjust as needed
+        # if not self._is_circle_free(qx, qy, body_radius):
+        #     return False
+        
+        return True
+
+    def _is_point_free(self, x, y):
+        """Check if a single point is within bounds and obstacle-free"""
+        # Check bounds
+        # if x < 0 or x > self.width or y < 0 or y > self.height:
+        #     return False
+        
+        # Check obstacles
         for obs in self.obstacles:
-            x1, y1 = obs[0]
-            x2, y2 = obs[1]
-            if x >= (x1 - self.obs_buffer) and y >= (y1 - self.obs_buffer) and x <= (x2 + self.obs_buffer) and y <= (y2 + self.obs_buffer):
+            (ox1, oy1), (ox2, oy2) = obs
+            if ox1 <= x <= ox2 and oy1 <= y <= ox2:
                 return False
+        
         return True
+
+    def _is_line_free(self, p1, p2):
+        """Check if line segment between two points is collision-free"""
+        x1, y1 = p1
+        x2, y2 = p2
+        
+        # Calculate number of checks based on distance
+        distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+        n_checks = max(int(np.ceil(distance * 10)), 10)  # at least 10 checks
+        
+        for i in range(n_checks + 1):
+            t = i / n_checks
+            x = x1 + t * (x2 - x1)
+            y = y1 + t * (y2 - y1)
+            
+            if not self._is_point_free(x, y):
+                return False
+        
+        return True
+
+    def _is_circle_free(self, cx, cy, radius):
+        """Check if circle is collision-free (sample points on perimeter)"""
+        n_samples = max(int(2 * np.pi * radius * 2), 8)
+        
+        for i in range(n_samples):
+            angle = 2 * np.pi * i / n_samples
+            x = cx + radius * np.cos(angle)
+            y = cy + radius * np.sin(angle)
+            
+            if not self._is_point_free(x, y):
+                return False
+        
+        return True
+
     
-    def is_valid(self, q_nearest, q_new):
-        if not self.is_free(q_new):
-            return False
-        # Check the line segment between q_nearest and q_new for collisions
-        num_checks = int(np.ceil(np.linalg.norm(np.array(q_new) - np.array(q_nearest)))*20)
-        for i in range(1, num_checks + 1):
-            t = i / num_checks
-            intermediate_point = (q_nearest[0] + t * (q_new[0] - q_nearest[0]),
-                                  q_nearest[1] + t * (q_new[1] - q_nearest[1]))
-            if not self.is_free(intermediate_point):
-                return False
-        return True
 
     def display(self, ax=None):
         if ax is None:
@@ -79,7 +140,7 @@ class Map:
         # plt.show()
 
 if __name__ == "__main__":
-    m = Map(10, 10)
+    m = Map(4, 4)
     m.obstacles_one(3)
     m.display()
 
@@ -95,7 +156,7 @@ if __name__ == "__main__":
     # m4 = Map(10, 10)
     # m4.obstacles_four()
     # m4.display()
-    m = Map(10, 10)
-    m.obstacles_five(2)
+    m = Map(4, 4)
+    m.obstacles_five(1.5)
     m.display()
     plt.show()

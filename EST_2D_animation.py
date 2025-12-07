@@ -9,20 +9,31 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 # Option 1: import the class directly
 from matplotlib.animation import FuncAnimation
+import os
+import yaml
 
 import imageio
 
 class EST():
-    def __init__(self, start_point, start_state, goal, quad, seed=None):
+    def __init__(self, start_point, start_state, goal, quad, obstacles=5, seed=None):
         self.seed = seed
         self.start = start_point
         self.start_state = start_state
         self.goal = goal
         self.quad = quad
-        self.map = Map(10,10,10)
-        # self.map.obstacles_five(2)
-        self.map.obstacles_one(3)
+        self.map = Map(4,4,5)
+        if obstacles == 5:
+            obstacle_gap = 1.5
+            self.map.obstacles_five(obstacle_gap)
+            os.makedirs("info_obstacle_5", exist_ok=True)
+            self.file_name = f"est_seed_{seed}_obstacle_{obstacle_gap}.yaml" if seed is not None else "est.yaml"
+        else:
+            self.map.obstacles_four()
+            os.makedirs("info_obstacle_4", exist_ok=True)
+            self.file_name = f"est_seed_{seed}_obstacle_4.yaml" if seed is not None else "est.yaml"
+        # self.map.obstacles_one(3)
         # self.map.obstacles_two()
+        
         self.path = []
         self.states_path = [start_state]
         self.V = [start_point]
@@ -32,7 +43,7 @@ class EST():
         self.w = {start_point: 1.0}
         self.w_prime = {start_point: 1.0}
         self.delta = 2.0
-        self.goal_tol = 1.5
+        self.goal_tol = 0.5
         self.p = {start_point: 1.0}
         min_thrust, min_tau = self.quad.calc_min_torque_thrust()
         max_thrust, max_tau = self.quad.calc_max_torque_thrust()
@@ -43,6 +54,7 @@ class EST():
     def steer(self,x0, tau, f):
         N = 30
         points = np.zeros((self.quad.n_states, N))
+        quad_pos = np.zeros((2, N)) #saving quadcopter position to check for collisions
         points[:,0] = x0.flatten()
         x = x0
         for i in range(1, N):
@@ -50,21 +62,9 @@ class EST():
                 tau = 0
             x = self.quad.runge_kutta_step(x, f, tau)
             points[:,i] = x.flatten()
-        return points
+        return points, quad_pos
         
     def sample_actuation(self, x_rand):
-        # (tau, f) = self.E_commands[x_rand]
-        # percent = 0.7
-        # if tau == 0:
-        #     tau = np.random.uniform(self.min_u[0]/2, self.max_u[0]/2)
-        # else:
-        #     tau = np.random.uniform(tau*(1-percent), tau*(1+percent))
-        #     tau = np.clip(tau, self.min_u[0], self.max_u[0])
-        # if f == 0:
-        #     f = np.random.uniform(self.min_u[1], self.max_u[1])
-        # else:
-        #     f = np.random.uniform(f*(1-percent), f*(1+percent))
-        #     f = np.clip(f, self.min_u[1], self.max_u[1])
         tau = np.random.uniform(self.min_u[0]/2, self.max_u[0]/2)
         f = np.random.uniform(self.min_u[1], self.max_u[1])
 
@@ -103,15 +103,15 @@ class EST():
             else:
                 x0 = self.E_states[x_rand][:,-1].reshape((self.quad.n_states,1))
 
-            X_new = self.steer(x0, tau, f)
+            X_new, Q_new = self.steer(x0, tau, f)
             x_new = (float(X_new[0,-1]), float(X_new[1,-1]))
 
             x_new_points = []
             is_free = True
-            for point in X_new.T:
+            for (point, q_pos) in zip(X_new.T, Q_new.T):
                 point_tuple = (float(point[0]), float(point[1]))
                 x_new_points.append(point_tuple)
-                if not self.map.is_free(point_tuple):
+                if not self.map.is_free(point_tuple, q_pos, self.quad.L):
                     is_free = False
                     break
 
@@ -130,9 +130,40 @@ class EST():
 
                 if self.check_goal_reached(x_new):
                     self.path = self.reconstruct_path(x_new)
+                    self.save_info()
                     yield ("goal", None, None)
                     return
+        self.save_info()
 
+    def save_info(self):
+        #function to save the control efforts along the path, the path length (in meters) and number of iteration in yaml file
+        if self.path:
+            tau_list = []
+            f_list = []
+            for i in range(len(self.path)-1):
+                point = self.path[i+1]
+                tau, f = self.E_commands[point]
+                tau_list.append(tau)
+                f_list.append(f)
+            path_length = 0.0
+            for i in range(len(self.path)-1):
+                p1 = np.array(self.path[i])
+                p2 = np.array(self.path[i+1])
+                path_length += np.linalg.norm(p2 - p1)
+            info = {
+                'tau_list': tau_list,
+                'f_list': f_list,
+                'path_length': path_length,
+                'iterations': len(self.V)
+            }
+        else:
+            info = {
+                'message': 'No path found',
+                'iterations': len(self.V)
+            }
+        
+        with open(self.file_name, 'w') as file:
+            yaml.dump(info, file)
 
     def reconstruct_path(self, x_goal):
         x_current = x_goal
@@ -147,14 +178,14 @@ class EST():
     def check_goal_reached(self, x):
         return np.linalg.norm(np.array(x) - np.array(self.goal)) < self.goal_tol
 
-def search_animate(seed):
+def search_animate(obstacles, seed):
     quad = quad_w_load_dyn()
     start_state = np.zeros((quad.n_states,1))
     start_state[0:quad.n_states] = quad.x.copy()
-    start_point = (5.5,2.0)
+    start_point = (3.5,0.5)
     start_state[0:2] = np.array([[start_point[0]],[start_point[1]]])
-    goal = (2.5,7.0)
-    est = EST(start_point, start_state, goal, quad,seed)
+    goal = (0.5,3.5)
+    est = EST(start_point, start_state, goal, quad, obstacles=obstacles, seed=seed)
 
     fig, ax = plt.subplots()
     est.map.display(ax)
@@ -307,7 +338,7 @@ def search_animate(seed):
         # return ALL artists that changed
         return load_trail, quad_trail, pend_line, load_point, quad_point, arm_line, motor1_point, motor2_point
 
-    anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=quad.dt*100)
+    anim = FuncAnimation(fig, update, frames=N, init_func=init, blit=True, interval=10)
     anim.save(f"{est.gif_folder}/quad_pendulum_est_mod_1.gif", writer="pillow", fps=30)
     # plt.show()
     return
@@ -315,4 +346,4 @@ def search_animate(seed):
 if __name__ == "__main__":
     for i in range(100):
         seed = i
-        search_animate(seed=i)
+        search_animate(obstacles=5, seed=i)

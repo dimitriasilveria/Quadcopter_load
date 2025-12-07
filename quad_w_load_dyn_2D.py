@@ -109,6 +109,9 @@ class quad_w_load_dyn:
         x0[6,0] = np.clip(x0[6,0], -np.pi/4, np.pi/4)  # keep angles within -pi/4 to pi/4
         x0[4,0] = np.clip(x0[4,0], -np.pi, np.pi)
         self.x = x0
+        phi_q = x0[6,0]
+        self.R = np.array([[np.cos(phi_q), -np.sin(phi_q)],
+                           [np.sin(phi_q),  np.cos(phi_q)]])
         return x0
     
     def quad_position(self):
