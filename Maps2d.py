@@ -82,8 +82,8 @@ class Map:
     def _is_point_free(self, x, y):
         """Check if a single point is within bounds and obstacle-free"""
         # Check bounds
-        # if x < 0 or x > self.width or y < 0 or y > self.height:
-        #     return False
+        if x < 0 or x > self.width or y < 0 or y > self.height:
+            return False
         
         # Check obstacles
         for obs in self.obstacles:
@@ -140,9 +140,9 @@ class Map:
         # plt.show()
 
 if __name__ == "__main__":
-    m = Map(4, 4)
-    m.obstacles_one(3)
-    m.display()
+    # m = Map(10, 10)
+    # m.obstacles_one(2)
+    # m.display()
 
     # m2 = Map(10, 10)
     # m2.obstacles_two()
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     # m4 = Map(10, 10)
     # m4.obstacles_four()
     # m4.display()
-    m = Map(4, 4)
-    m.obstacles_five(1.5)
+    m = Map(10, 10)
+    m.obstacles_five(3.)
     m.display()
     plt.show()

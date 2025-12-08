@@ -52,7 +52,7 @@ class EST():
         self.gif_folder = "gifs"
 
     def steer(self,x0, tau, f):
-        N = 30
+        N = 20
         points = np.zeros((self.quad.n_states, N))
         quad_pos = np.zeros((2, N)) #saving quadcopter position to check for collisions
         points[:,0] = x0.flatten()
@@ -118,7 +118,7 @@ class EST():
             if is_free and x_new not in self.V:
                 self.E_points[x_new] = x_new_points
                 self.E_states[x_new] = X_new
-                # self.E_commands[x_new] = (tau, f)
+                self.E_commands[x_new] = (tau, f)
 
                 # Parent = first point
                 parent = x_new_points[0]
@@ -202,7 +202,7 @@ def search_animate(obstacles, seed):
     frame_count = 0
 
     # --- run search ---
-    for event in est.search(max_iterations=100000):
+    for event in est.search(max_iterations=10000):
         if event[0] == "extend":
             parent, child = event[1], event[2]
             pts = est.E_points[child]

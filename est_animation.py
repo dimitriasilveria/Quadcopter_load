@@ -14,7 +14,7 @@ class EST():
         self.start_state = start_state
         self.goal = goal
         self.quad = quad
-        self.map = Map(40,40,40)
+        self.map = Map(4,4,4)
         # self.map.obstacles_one(30)
         self.path = []
         self.V = [start_point]
@@ -22,8 +22,8 @@ class EST():
         self.E_states = {}
         self.w = {start_point: 1.0}
         self.w_prime = {start_point: 1.0}
-        self.delta = 10.0
-        self.goal_tol = 2.0
+        self.delta = 1.0
+        self.goal_tol = 0.5
         self.p = {start_point: 1.0}
         _, min_tau = self.quad.calc_min_torque_thrust()
         max_thrust, max_tau = self.quad.calc_max_torque_thrust()
@@ -166,9 +166,9 @@ if __name__ == "__main__":
     start_state[0:quad.n_states] = quad.x.copy()
     orientation = R.from_matrix(quad.R).as_euler('xyz').reshape((3,1))
     start_state[quad.n_states:quad.n_states+3] = orientation
-    start_state[0:3] = np.array([[10],[10],[10]])
-    start_point = (10,10,10)
-    goal = (30,30,30)
+    start_state[0:3] = np.array([[1],[1],[1]])
+    start_point = (1,1,1)
+    goal = (3,3,3)
     est = EST(start_point, start_state, goal, quad)
     est.search(100000)
     ic(len(est.path))

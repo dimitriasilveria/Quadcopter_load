@@ -52,11 +52,11 @@ if __name__ == "__main__":
         p_ddot_des = ddpc
         pc_state = np.vstack((pc, dpc))
         R_des, F = load_ctrl.attitude_controller(p_des, p_dot_des, p_ddot_des, A, b1_d)
-        # Rc, dRc, ddRc = load_ctrl.command_filter(Rc_state, R_des, 0.98, 75)
-        # Rc = Rc/np.linalg.det(Rc)**(1/3)
+        Rc, dRc, ddRc = load_ctrl.command_filter(Rc_state, R_des, 0.98, 75)
+        Rc = Rc/np.linalg.det(Rc)**(1/3)
         # input()
-        # Rc_state = np.vstack((Rc, dRc))
-        # dR_des = dRc
+        Rc_state = np.vstack((Rc, dRc))
+        dR_des = dRc
         w_des = (1/quad.dt)*skew_to_R3(logm(R_des_prev.T @ R_des))
         W_des[:,i] = w_des.flatten()
 
