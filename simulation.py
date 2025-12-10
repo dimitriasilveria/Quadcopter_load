@@ -8,7 +8,7 @@ quad = quad_dyn()
 
 dt = 0.01
 plotEvery = 5
-tf = 10.0
+tf = 50.0
 
 t = 0.0
 des0 = trajectory(0.0)
@@ -19,7 +19,7 @@ Pos = [x[0:2]]  # store initial load position
 desPos = [des0[0:2]]  # store initial desired load position
 
 while t < tf:
-    print(t)
+    # print(t)
     t_span = (t, t + plotEvery*dt)
     t_eval = np.linspace(t_span[0], t_span[1], plotEvery + 1)
 
@@ -48,7 +48,7 @@ while t < tf:
 
 Pos = np.vstack(Pos)
 desPos = np.vstack(desPos)
-# plt.plot(Pos[:,0], Pos[:,1], label='Load Path')
+plt.plot(Pos[:,0], Pos[:,1], label='Load Path')
 plt.plot(desPos[:,0], desPos[:,1], '--', label='Desired Path')
 plt.xlabel('X Position (m)')
 plt.ylabel('Y Position (m)')

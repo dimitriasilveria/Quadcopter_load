@@ -24,8 +24,8 @@ def controller(q, traj, quad):
     KdphiL = 10.0
     KpphiQ = 500.0
     KdphiQ = 30.0
-    max_torque, max_thrust = quad.calc_max_torque_thrust()
-    min_torque, min_thrust = quad.calc_min_torque_thrust()
+    max_thrust, max_torque = quad.calc_max_torque_thrust()
+    min_thrust, min_torque = quad.calc_min_torque_thrust()
 
     # Unpack python-ordered state
     yL   = q[0]
