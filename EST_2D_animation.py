@@ -4,7 +4,7 @@ from icecream import ic
 from Maps2d import Map
 from scipy.spatial import cKDTree
 import matplotlib 
-matplotlib.use("Agg")   # no GUI, no figure windows will appear
+# matplotlib.use("Agg")   # no GUI, no figure windows will appear
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 # Option 1: import the class directly
@@ -21,7 +21,7 @@ class EST():
         self.start_state = start_state
         self.goal = goal
         self.quad = quad
-        self.map = Map(4,4,5)
+        self.map = Map(10,10,5)
         if obstacles == 5:
             obstacle_gap = 1.5
             self.map.obstacles_five(obstacle_gap)
@@ -40,6 +40,8 @@ class EST():
         self.E_points = {}
         self.E_commands = {start_point: (0, 9.81*(self.quad.mq + self.quad.ml))}
         self.E_states = {start_point: start_state}
+        self.E_tau = {start_point: [0]}
+        self.E_f = {start_point: [9.81*(self.quad.mq + self.quad.ml)]}
         self.w = {start_point: 1.0}
         self.w_prime = {start_point: 1.0}
         self.delta = 2.0
@@ -52,23 +54,28 @@ class EST():
         self.gif_folder = "gifs"
 
     def steer(self,x0, tau, f):
-        N = 20
+        N = 30
         points = np.zeros((self.quad.n_states, N))
         quad_pos = np.zeros((2, N)) #saving quadcopter position to check for collisions
+        quad_pos[:,0] = self.quad.quad_position().flatten()
         points[:,0] = x0.flatten()
+        commands = np.zeros((2, N-1))
         x = x0
         for i in range(1, N):
             if i != 1:
                 tau = 0
+            commands[0,i-1] = tau
+            commands[1,i-1] = f
             x = self.quad.runge_kutta_step(x, f, tau)
             points[:,i] = x.flatten()
-        return points, quad_pos
+            quad_pos[:,i] = self.quad.quad_position().flatten()
+        return points, quad_pos, commands
         
     def sample_actuation(self, x_rand):
         tau = np.random.uniform(self.min_u[0]/2, self.max_u[0]/2)
         f = np.random.uniform(self.min_u[1], self.max_u[1])
 
-        return tau, f
+        return tau[0], f[0]
     
     def update_proximity(self, x_new,):
         tree = cKDTree(self.V)
@@ -103,22 +110,24 @@ class EST():
             else:
                 x0 = self.E_states[x_rand][:,-1].reshape((self.quad.n_states,1))
 
-            X_new, Q_new = self.steer(x0, tau, f)
+            X_new, Q_new, Commands = self.steer(x0, tau, f)
             x_new = (float(X_new[0,-1]), float(X_new[1,-1]))
 
             x_new_points = []
             is_free = True
             for (point, q_pos) in zip(X_new.T, Q_new.T):
                 point_tuple = (float(point[0]), float(point[1]))
+                quad_pos = (float(q_pos[0]), float(q_pos[1]))
                 x_new_points.append(point_tuple)
-                if not self.map.is_free(point_tuple, q_pos, self.quad.L):
+                if not self.map.is_free(point_tuple, quad_pos, self.quad.L):
                     is_free = False
                     break
 
             if is_free and x_new not in self.V:
                 self.E_points[x_new] = x_new_points
                 self.E_states[x_new] = X_new
-                self.E_commands[x_new] = (tau, f)
+                self.E_tau[x_new] = Commands[0,:].tolist()
+                self.E_f[x_new] = Commands[1,:].tolist()
 
                 # Parent = first point
                 parent = x_new_points[0]
@@ -133,33 +142,30 @@ class EST():
                     self.save_info()
                     yield ("goal", None, None)
                     return
-        self.save_info()
+        if (it == max_iterations - 1) and not self.path:
+            self.save_info()
+            print("Max iterations reached, no path found.")
 
     def save_info(self):
         #function to save the control efforts along the path, the path length (in meters) and number of iteration in yaml file
         if self.path:
-            tau_list = []
-            f_list = []
-            for i in range(len(self.path)-1):
-                point = self.path[i+1]
-                tau, f = self.E_commands[point]
-                tau_list.append(tau)
-                f_list.append(f)
+      
             path_length = 0.0
             for i in range(len(self.path)-1):
                 p1 = np.array(self.path[i])
                 p2 = np.array(self.path[i+1])
                 path_length += np.linalg.norm(p2 - p1)
             info = {
-                'tau_list': tau_list,
-                'f_list': f_list,
-                'path_length': path_length,
+                'tau_list': self.tau_path,
+                'f_list': self.f_path,
+                'path_length': str(path_length),
                 'iterations': len(self.V)
             }
         else:
             info = {
-                'message': 'No path found',
+                'path_length': 'np.inf',
                 'iterations': len(self.V)
+                
             }
         
         with open(self.file_name, 'w') as file:
@@ -170,7 +176,9 @@ class EST():
         while x_current != self.start:
             path_points = self.E_points[x_current]
             self.path = path_points[:-1] + self.path
-            self.states_path = [self.E_states[x_current][:, :-1]] + self.states_path
+            self.states_path = self.E_states[x_current][:, :-1] + self.states_path
+            self.tau_path = self.E_tau[x_current][:-1] + self.tau_path
+            self.f_path = self.E_f[x_current][:-1] + self.f_path
             x_current = path_points[0]
         self.path.reverse()
         return self.path
@@ -182,9 +190,9 @@ def search_animate(obstacles, seed):
     quad = quad_w_load_dyn()
     start_state = np.zeros((quad.n_states,1))
     start_state[0:quad.n_states] = quad.x.copy()
-    start_point = (3.5,0.5)
+    start_point = (7.0,1.5)
     start_state[0:2] = np.array([[start_point[0]],[start_point[1]]])
-    goal = (0.5,3.5)
+    goal = (3,8.0)
     est = EST(start_point, start_state, goal, quad, obstacles=obstacles, seed=seed)
 
     fig, ax = plt.subplots()

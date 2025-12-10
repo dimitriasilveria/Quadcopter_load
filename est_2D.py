@@ -51,7 +51,7 @@ class EST():
         self.gif_folder = "gifs"
 
     def steer(self,x0, tau, f):
-        N = 15
+        N = 30
         points = np.zeros((self.quad.n_states, N))
         quad_pos = np.zeros((2, N)) #saving quadcopter position to check for collisions
         quad_pos[:,0] = self.quad.quad_position().flatten()
@@ -164,7 +164,6 @@ class EST():
                 'iterations': len(self.V)
                 
             }
-            print(self.V)
         
         with open(self.file_name, 'w') as file:
             yaml.dump(info, file)
@@ -194,8 +193,9 @@ if __name__ == "__main__":
         quad = quad_w_load_dyn()
         start_state = np.zeros((quad.n_states,1))
         start_state[0:quad.n_states] = quad.x.copy()
-        start_point = (5,1.5)
+        start_point = (7.0,1.5)
         start_state[0:2] = np.array([[start_point[0]],[start_point[1]]])
-        goal = (5,8.5)
+        goal = (3,8.0)
+        # goal = (3,1.0)
         est = EST(start_point, start_state, goal, quad, obstacles=5, seed=seed)
-        est.search(50000)
+        est.search(100000)

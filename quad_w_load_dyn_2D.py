@@ -121,6 +121,7 @@ class quad_w_load_dyn:
         return x_q
     
 
+
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
     f = 9.81*(quad.mq + quad.ml)+2  # thrust force
