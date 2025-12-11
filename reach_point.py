@@ -8,7 +8,7 @@ quad = quad_dyn()
 
 dt = 0.01
 plotEvery = 5
-tf = 1
+tf = 1.2
 
 t = 0.0
 des0 = trajectory(0.0)

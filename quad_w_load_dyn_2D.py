@@ -106,8 +106,7 @@ class quad_w_load_dyn:
             x0 = sol.y[:, -1].reshape((self.n_states,1))
         else:
             x0 = sol.y.reshape((self.n_states,1))
-        x0[6,0] = np.clip(x0[6,0], -np.pi/4, np.pi/4)  # keep angles within -pi/4 to pi/4
-        x0[4,0] = np.clip(x0[4,0], -np.pi, np.pi)
+
         self.x = x0
         phi_q = x0[6,0]
         self.R = np.array([[np.cos(phi_q), -np.sin(phi_q)],

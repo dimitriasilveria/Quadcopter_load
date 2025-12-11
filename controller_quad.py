@@ -161,6 +161,7 @@ def closed_loop_dynamics_point(t, x, quad, controller, trajectory):
 
     # 3. System dynamics
     x_dot = quad.dynamics(x.reshape((quad.n_states, 1)), f, tau)
+    
 
     # 4. Return flat vector (required by integrators)
     return x_dot.flatten()

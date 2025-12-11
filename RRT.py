@@ -5,9 +5,11 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from controller_quad import controller, closed_loop_dynamics_point
 from quad_w_load_dyn_2D import quad_w_load_dyn as quad_dyn
+from numpy.typing import NDArray
+from icecream import ic
 
 class RRT:
-    def __init__(self, start, goal, quad, map_type,l=30, epsilon=0.01, step=2.5, goal_tolerance=1.0):
+    def __init__(self, start, goal, quad, map_type,l=30, epsilon=0.01, step=2.5, goal_tolerance=0.5):
         self.start = start
         self.goal = goal
         self.epsilon = epsilon
@@ -16,57 +18,62 @@ class RRT:
         self.map_height = 10
         self.map_width = 10
         self.map = Map(self.map_width, self.map_height,step)
-        if map_type == 1:
-            self.map.obstacles_one(l)
-        elif map_type == 2:
-            self.map.obstacles_two()
-        elif map_type == 3:
-            self.map.obstacles_three()
-        elif map_type == 4:
-            self.map.obstacles_four()
+        # if map_type == 1:
+        #     self.map.obstacles_one(l)
+        # elif map_type == 2:
+        #     self.map.obstacles_two()
+        # elif map_type == 3:
+        #     self.map.obstacles_three()
+        # elif map_type == 4:
+        #     self.map.obstacles_four()
 
         self.path_length = 0
-        self.V = [self.start]  # List of vertices
-        self.E = {}      # Dictionary of edges\
+        self.path = []
+        self.V = [self.array_to_tuple(self.start)]  # List of vertices
         self.quad = quad
+        self.quad.x[0:2] = np.array(self.start[0:2]).reshape((2,1))  # initial load position
+        self.quad.x[2:4] = np.array(self.start[2:4]).reshape((2,1))  # initial load velocity
+        self.E_states = {}  # Edges in the tree
+        self.E_states[self.array_to_tuple(self.start)] = self.quad.x.flatten()
+        self.E = {}  # Edges in the tree
+        # self.E[self.start] = None  # start has no parent
         self.dt = self.quad.dt
         self.min_vel = -5.0
         self.max_vel = 5.0
+        self.K = np.diag([2.0, 2.0, 1.5, 1.5])  # weighting matrix for cost function
 
-    def sample(self):
+    def sample(self) -> NDArray:
         p = random.random()
         if p < self.epsilon:
-            return self.goal
+            return np.hstack((self.goal, np.array([0.0, 0.0]))).reshape((6,1))  # position, velocity, acceleration
         else:
             x = random.uniform(0, self.map.width)
             y = random.uniform(0, self.map.height)
             vx = random.uniform(self.min_vel, self.max_vel)
             vy = random.uniform(self.min_vel, self.max_vel)
-            return (x, y, vx, vy, 0.0, 0.0)  # position, velocity, acceleration
+            return np.array([x, y, vx, vy, 0.0, 0.0]).reshape((6,1)) # position, velocity, acceleration
 
                 
-    def nearest(self, q_rand):
+    def nearest(self, q_rand: NDArray) -> NDArray:
         min_dist = np.inf
         q_near = None
         for v in self.V:
-            dist = np.linalg.norm(np.array(q_rand) - np.array(v))
+            v_array = np.array(v).reshape((4,1))
+            dist = (q_rand[0:4] - v_array).T @ self.K @ (q_rand[0:4] - v_array)
             if dist < min_dist:
                 min_dist = dist
                 q_near = v
         return q_near
     
-    def steer(self, l_near, l_rand):
+    def steer(self, l_near: NDArray, l_rand: NDArray) -> NDArray:
         #l_near and l_rand contain positions, velocities, and accelerations
         tf = 1
         t = 0.0
-        l_near = np.array(l_near)
-        x = np.array(l_rand)
-        self.quad.x[0:2] = l_near[0:2].reshape((2,1))  # initial load position
-        self.quad.x[2:4] = l_near[2:4].reshape((2,1))  # initial load velocity
-        x = l_near.copy()
-        Pos = []
-        Vel = []
-        Quad_pos = []
+        
+        x = l_near.flatten()
+        self.quad.x[0:2] = x[0:2].reshape((2,1))  # initial load position
+        self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
+        Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
         #simulate
         while t < tf:
             t_span = (t, t + self.dt)
@@ -83,66 +90,81 @@ class RRT:
             )
                 # Update state
             x = sol.y.T[-1]
+            x[4] = np.clip(x[4], -np.pi/4, np.pi/4)  # keep angles within -pi/4 to pi/4
+            x[6] = np.clip(x[6], -np.pi/2, np.pi/2)
+            x[5] = np.clip(x[5], -np.pi, np.pi)  # limit angular velocities
+            x[7] = np.clip(x[7], -np.pi, np.pi)
             t = sol.t[-1]
-            Pos.append(x[0:2])  # store load position only
-            Vel.append(x[2:4])  # store load velocity only
-            Quad_pos.append(self.quad.quad_position().flatten())
-        return Pos, Vel, Quad_pos
+            if self.map.is_free((x[0], x[1]), self.quad.quad_position().flatten(), self.quad.L) == False:
+                return None, None
+            Pos_vel.append(x[0:4])  # store load position and velocity
+        Quad_states = x  # store quad states
+        return Pos_vel, Quad_states
 
     def search(self, num_iter = 1e5, seed=None):
         if seed is not None:
             random.seed(seed)
 
-        i = 0
         for i in range(int(num_iter)):
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
-            L_new, V_new, Q_new = self.steer(l_nearest, l_rand) #get load position and velocity, and quad position trajectories
-            if self.map.is_valid(q_nearest, q_new):
-                if q_new not in self.V:
-                    self.V.append(q_new)
-                self.E[q_new] = [q_nearest,np.linalg.norm(np.array(q_new) - np.array(q_nearest))]
-            i += 1
-            if  q_new == self.goal:
-                print("Goal reached!")
-                return self.reconstruct_path(q_new), i
+            nearest_states = self.E_states[l_nearest]
+            L_new, Q_new = self.steer(nearest_states, l_rand) #get load position and velocity, and quad position trajectories
+            l_new = L_new[-1] if L_new is not None else None
+            l_new_point = self.array_to_tuple(l_new) if l_new is not None else None
+            # Check if new point is valid
+            if l_new is not None:
+                if l_new_point not in self.V:
+                    self.V.append(l_new_point)
+                self.E[l_new_point] = [L_new]
+                self.E_states[l_new_point] = Q_new
+
+                if  np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < self.goal_tolerance:
+                    print("Goal reached!")
+                    return self.reconstruct_path(l_new), i
             
         print("Goal not reached within max iterations.")
         return None, i
-    
+
+    def array_to_tuple(self, arr):
+        return tuple(float(x) for x in arr.flatten())
+
     def reconstruct_path(self, q_new):
-        path = [self.goal]
-        current = q_new
-        self.path_length = np.linalg.norm(np.array(self.goal) - np.array(q_new))
-        while current != self.start:
-            path.append(current)
-            if current in self.E:
-                self.path_length += self.E[current][1]  # Add edge length to path length
-                current = self.E[current][0]  # Move to the parent node
-            else:
-                break
-        path.append(self.start)
-        path.reverse()
-        return path
+        
+        current = self.array_to_tuple(q_new)
+        print(current, self.array_to_tuple(self.start))
+        while current != self.array_to_tuple(self.start):
+            path_points = self.E[current][0]
+            # print(path_points)
+            # input()
+            self.path = path_points[::-1] + self.path  # prepend to path
+            current = self.array_to_tuple(path_points[0])
+        self.path = [self.start] + self.path
+        self.path.reverse()  # reverse to get from start to goal
+        return self.path
+
     
     def plot_path(self, path, fig_name="rrt_path.pdf"):
         fig, ax = plt.subplots()
         ax = self.map.display(ax)
-        xs, ys = zip(*self.V)
+        xs, ys, vx, vy = zip(*self.V)
         ax.scatter(xs, ys, c='blue', s=5)
         if path:
-            path_xs, path_ys = zip(*path)
+            path_xs, path_ys, path_vx, path_vy = zip(*path)
             ax.plot(path_xs, path_ys, c='red', linewidth=2)
         plt.scatter([self.start[0]], [self.start[1]], c='green', s=50, label='Start')
         plt.scatter([self.goal[0]], [self.goal[1]], c='orange', s=50, label='Goal')
-        for child, (parent, _) in self.E.items():
-            plt.plot([child[0], parent[0]], [child[1], parent[1]], c='gray', linewidth=0.5)
+        # for child, (parent, _) in self.E.items():
+        #     plt.plot([child[0], parent[0]], [child[1], parent[1]], c='gray', linewidth=0.5)
         plt.legend()
         plt.savefig(fig_name)
         # plt.show()
 
 if __name__ == "__main__":
     quad = quad_dyn()
-    rrt = RRT(start=(25, 50), goal=(75, 50), map_type=1, quad=quad)
+    start = np.array([2.5, 5.0, 0.0, 0.0])
+    goal = np.array([7.5, 5.0, 0.0, 0.0])
+    rrt = RRT(start=start, goal=goal, map_type=1, quad=quad)
     path, iterations = rrt.search()
+    print(path)
     rrt.plot_path(path)
