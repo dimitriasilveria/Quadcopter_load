@@ -8,7 +8,7 @@ quad = quad_dyn()
 
 dt = 0.01
 plotEvery = 5
-tf = 50.0
+tf = 1
 
 t = 0.0
 des0 = trajectory(0.0)
@@ -19,30 +19,33 @@ Pos = [x[0:2]]  # store initial load position
 desPos = [des0[0:2]]  # store initial desired load position
 point = trajectory(t+dt)
 
+point[0:2] = point[0:2]+np.array([-10, 5.0])  # desired point to reach
 
 #run itegration until the system achieves the desired point
+while  t < tf:
+    print(t)
+    t_span = (t, t + dt)
+    sol = solve_ivp(
+        fun=lambda tt, xx: closed_loop_dynamics_point(
+            tt, xx, quad, controller, point
+        ),
+        t_span=t_span,
+        y0=x,
+        method="RK45",
+        t_eval=t_span,      # like MATLAB output grid
+        rtol=1e-6,
+        atol=1e-8
+    )
 
-t_span = (0, 0 + dt)
-sol = solve_ivp(
-    fun=lambda tt, xx: closed_loop_dynamics_point(
-        tt, xx, quad, controller, point
-    ),
-    t_span=t_span,
-    y0=x,
-    method="RK45",
-    t_eval=t_span,      # like MATLAB output grid
-    rtol=1e-6,
-    atol=1e-8
-)
+    tStep = sol.t
+    qStep = sol.y.T
 
-tStep = sol.t
-qStep = sol.y.T
-
-# Update state
-x = qStep[-1]
-# t = tStep[-1]
+    # Update state
+    x = qStep[-1]
+    t = tStep[-1]
+    Pos.append(qStep[:, 0:2])  # store load position only
 desPos.append(point[0:2])  # store desired load position only
-Pos.append(qStep[:, 0:2])  # store load position only
+print(np.linalg.norm(x[0:2]-point[0:2]))
 
 #plot results
 
