@@ -1,6 +1,6 @@
 from scipy.integrate import solve_ivp
 import numpy as np
-from controller import controller, trajectory, closed_loop_dynamics
+from controller_quad import controller, trajectory, closed_loop_dynamics
 from quad_w_load_dyn_2D import quad_w_load_dyn as quad_dyn
 import matplotlib.pyplot as plt 
 
