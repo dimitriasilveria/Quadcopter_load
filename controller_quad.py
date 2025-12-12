@@ -148,7 +148,7 @@ def closed_loop_dynamics(t, x, quad, controller, trajectory):
     # 4. Return flat vector (required by integrators)
     return x_dot.flatten()
 
-def closed_loop_dynamics_point(t, x, quad, controller, trajectory):
+def closed_loop_dynamics_point(t, x, quad, controller, trajectory, file = None):
     """
     This is the exact equivalent of quadLoadDynamics.m
     """
@@ -158,7 +158,9 @@ def closed_loop_dynamics_point(t, x, quad, controller, trajectory):
 
     # 2. Control
     f, tau = controller(x, trajectory, quad)
-
+    if file is not None:
+        file['f'].append(float(f))
+        file['tau'].append(float(tau))
     # 3. System dynamics
     x_dot = quad.dynamics(x.reshape((quad.n_states, 1)), f, tau)
     

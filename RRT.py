@@ -7,9 +7,11 @@ from controller_quad import controller, closed_loop_dynamics_point
 from quad_w_load_dyn_2D import quad_w_load_dyn as quad_dyn
 from numpy.typing import NDArray
 from icecream import ic
+import os
+import yaml
 
 class RRT:
-    def __init__(self, start, goal, quad, obstacles,l=30, epsilon=0.01, step=2.5, goal_tolerance=0.5):
+    def __init__(self, start, goal, quad, obstacles,l=30, epsilon=0.01, step=2.5, goal_tolerance=0.5, file_name="rrt_path.yaml"):
         self.start = start
         self.goal = goal
         self.epsilon = epsilon
@@ -18,6 +20,8 @@ class RRT:
         self.map_height = 10
         self.map_width = 10
         self.map = Map(self.map_width, self.map_height,step)
+        self.file_name = file_name
+        self.info_dict = {'f':[], 'tau':[]}
         if obstacles == 5:
             obstacle_gap = 3.0
             self.map.obstacles_five(obstacle_gap)
@@ -43,7 +47,7 @@ class RRT:
         self.dt = self.quad.dt
         self.min_vel = -5.0
         self.max_vel = 5.0
-        self.K = np.diag([2.0, 2.0, 0, 0])  # weighting matrix for cost function
+        self.K = np.diag([1.0, 1.0, 4, 4])  # weighting matrix for cost function
 
     def sample(self) -> NDArray:
         p = random.random()
@@ -84,7 +88,7 @@ class RRT:
             t_span = (t, t + self.dt)
             sol = solve_ivp(
                 fun=lambda tt, xx: closed_loop_dynamics_point(
-                    tt, xx, self.quad, controller, l_rand
+                    tt, xx, self.quad, controller, l_rand, self.info_dict
                 ),
                 t_span=t_span,
                 y0=x,
@@ -133,7 +137,7 @@ class RRT:
             self.E_states[l_new_point] = Q_new
 
             # 🔥 Animate tree expansion
-            self.animate_tree()
+            # self.animate_tree()
 
             # Goal check
             if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < self.goal_tolerance:
@@ -148,9 +152,7 @@ class RRT:
         return tuple(float(x) for x in arr.flatten())
 
     def reconstruct_path(self, q_new):
-
         current = self.array_to_tuple(q_new)
-        print(current, self.array_to_tuple(self.start))
         while current != self.array_to_tuple(self.start):
             path_points = self.E[current][0]
             # print(path_points)
@@ -158,6 +160,14 @@ class RRT:
             self.path = path_points[:-1] + self.path  # prepend to path
             current = self.array_to_tuple(path_points[0])
         self.path = [self.start] + self.path
+        P = np.vstack(self.path)
+        diffs = np.diff(P[:,0:2], axis=0)
+        segment_lengths = np.linalg.norm(diffs, axis=1)
+        path_length = np.sum(segment_lengths)
+        self.info_dict['path_length'] = str(path_length)
+        self.info_dict['num_iterations'] = len(self.V)
+        with open(self.file_name, 'w') as file:
+            yaml.dump(self.info_dict, file)
         # self.path.reverse()  # reverse to get from start to goal
         return self.path
 
@@ -221,10 +231,14 @@ class RRT:
         plt.show()
 
 if __name__ == "__main__":
-    quad = quad_dyn()
-    start = np.array([7, 1.50, 0.0, 0.0])
-    goal = np.array([3, 8.0, 0.0, 0.0])
-    rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad)
-    path, iterations = rrt.search()
-    print(path)
-    rrt.plot_path(path)
+    folder_name = "RRT_paths_2D_obstacle_5"
+    os.makedirs(folder_name, exist_ok=True)
+    for i in range(100):
+        print(i)
+        quad = quad_dyn()
+        start = np.array([7, 1.50, 0.0, 0.0])
+        goal = np.array([3, 8.0, 0.0, 0.0])
+        rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
+        path, iterations = rrt.search(seed=i)
+        # print(path)
+        # rrt.plot_path(path)
