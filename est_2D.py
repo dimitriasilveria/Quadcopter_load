@@ -19,7 +19,7 @@ class EST():
         if obstacles == 5:
             obstacle_gap = 3.0
             self.map.obstacles_five(obstacle_gap)
-            file_dir = "info_obstacle_5"
+            file_dir = "info_obstacle_5_2"
             os.makedirs(file_dir, exist_ok=True)
             self.file_name = f"{file_dir}/est_seed_{seed}_obstacle_{obstacle_gap}.yaml" if seed is not None else "est.yaml"
         else:

@@ -34,13 +34,25 @@ class Map:
         self.obstacles_three()
 
     def obstacles_five(self, l):
-        self.add_obstacle([(0, self.height/2 - l/2), (self.width/2, self.height/2 - l/2 - 0.01*self.height)])
-        self.add_obstacle([(self.width/2, self.height/2 + l/2 + 0.01*self.height), (self.width, self.height/2 + l/2)])
+        """
+        Add two horizontal obstacles with a gap in the middle.
+        l: gap size between obstacles
+        """
+        # Bottom obstacle
+        y1_bottom = self.height/2 - l/2 - 0.01*self.height  # bottom y
+        y2_bottom = self.height/2 - l/2                    # top y
+        self.add_obstacle([(0, y1_bottom), (self.width/2, y2_bottom)])
+
+        # Top obstacle
+        y1_top = self.height/2 + l/2                       # bottom y
+        y2_top = self.height/2 + l/2 + 0.01*self.height    # top y
+        self.add_obstacle([(self.width/2, y1_top), (self.width, y2_top)])
+
 
     #example [(x1, y1), (x2, y2)]
     #where (x1, y1) is bottom-left and (x2, y2) is top-right
 
-    def is_free(self, load, quad_pos, quad_length):
+    def is_free(self, load, quad_pos, quad_length, theta=0):
         """
         Check if load, quadcopter, cable, and motors are collision-free
         """
@@ -61,11 +73,12 @@ class Map:
         
         # 4. Check quadcopter motors (assuming motors are at quad_length from center)
         # For a planar quadcopter, check all 4 motor positions (or 2 if truly 1D)
+        c, s = np.cos(theta), np.sin(theta)
         motor_offsets = [
             (quad_length, 0),   # right motor
             (-quad_length, 0)
         ]
-        
+
         for dx, dy in motor_offsets:
             mx, my = qx + dx, qy + dy
             if not self._is_point_free(mx, my):
@@ -88,7 +101,7 @@ class Map:
         # Check obstacles
         for obs in self.obstacles:
             (ox1, oy1), (ox2, oy2) = obs
-            if ox1 <= x <= ox2 and oy1 <= y <= ox2:
+            if min(ox1, ox2) <= x <= max(ox1, ox2) and min(oy1, oy2) <= y <= max(oy1, oy2):
                 return False
         
         return True

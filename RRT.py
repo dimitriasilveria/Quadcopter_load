@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from icecream import ic
 
 class RRT:
-    def __init__(self, start, goal, quad, map_type,l=30, epsilon=0.01, step=2.5, goal_tolerance=1):
+    def __init__(self, start, goal, quad, obstacles,l=30, epsilon=0.01, step=2.5, goal_tolerance=0.5):
         self.start = start
         self.goal = goal
         self.epsilon = epsilon
@@ -18,6 +18,9 @@ class RRT:
         self.map_height = 10
         self.map_width = 10
         self.map = Map(self.map_width, self.map_height,step)
+        if obstacles == 5:
+            obstacle_gap = 3.0
+            self.map.obstacles_five(obstacle_gap)
         # if map_type == 1:
         #     self.map.obstacles_one(l)
         # elif map_type == 2:
@@ -74,7 +77,10 @@ class RRT:
         # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
         Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
         #simulate
+
         while t < tf:
+            n_points = 10  # number of intermediate states per dt
+            t_eval = np.linspace(t, t + self.dt, n_points)
             t_span = (t, t + self.dt)
             sol = solve_ivp(
                 fun=lambda tt, xx: closed_loop_dynamics_point(
@@ -83,7 +89,7 @@ class RRT:
                 t_span=t_span,
                 y0=x,
                 method="RK45",
-                t_eval=t_span,      # like MATLAB output grid
+                t_eval=t_eval,      # like MATLAB output grid
                 rtol=1e-6,
                 atol=1e-8
             )
@@ -94,13 +100,17 @@ class RRT:
             x[5] = np.clip(x[5], -np.pi, np.pi)  # limit angular velocities
             x[7] = np.clip(x[7], -np.pi, np.pi)
             t = sol.t[-1]
-            if self.map.is_free((x[0], x[1]), self.quad.quad_position().flatten(), self.quad.L) == False:
-                return None, None
+            x_l = x[0:2].reshape((2,1))
+            for state in sol.y.T:
+                x_l = state[0:2].reshape((2,1))
+                quad_pos = x_l + self.quad.l * np.array([[-np.sin(state[4])],[np.cos(state[4])]])
+                if self.map.is_free((state[0], state[1]), quad_pos.flatten(), self.quad.L, state[6]) == False:
+                    return None, None
             Pos_vel.append(x[0:4])  # store load position and velocity
         Quad_states = x  # store quad states
         return Pos_vel, Quad_states
 
-    def search(self, num_iter = 1e5, seed=None):
+    def search(self, num_iter=1e5, seed=None):
         if seed is not None:
             random.seed(seed)
 
@@ -108,22 +118,31 @@ class RRT:
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
             nearest_states = self.E_states[l_nearest]
-            L_new, Q_new = self.steer(nearest_states, l_rand) #get load position and velocity, and quad position trajectories
-            l_new = L_new[-1] if L_new is not None else None
-            l_new_point = self.array_to_tuple(l_new) if l_new is not None else None
-            # Check if new point is valid
-            if l_new is not None:
-                if l_new_point not in self.V:
-                    self.V.append(l_new_point)
-                self.E[l_new_point] = [L_new]
-                self.E_states[l_new_point] = Q_new
+            L_new, Q_new = self.steer(nearest_states, l_rand)
 
-                if  np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < self.goal_tolerance:
-                    print("Goal reached!")
-                    return self.reconstruct_path(l_new), i
-            
+            if L_new is None:
+                continue
+
+            l_new = L_new[-1]
+            l_new_point = self.array_to_tuple(l_new)
+
+            if l_new_point not in self.V:
+                self.V.append(l_new_point)
+
+            self.E[l_new_point] = [L_new]
+            self.E_states[l_new_point] = Q_new
+
+            # 🔥 Animate tree expansion
+            self.animate_tree()
+
+            # Goal check
+            if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < self.goal_tolerance:
+                print("Goal reached!")
+                return self.reconstruct_path(l_new), i
+
         print("Goal not reached within max iterations.")
         return None, i
+
 
     def array_to_tuple(self, arr):
         return tuple(float(x) for x in arr.flatten())
@@ -136,13 +155,55 @@ class RRT:
             path_points = self.E[current][0]
             # print(path_points)
             # input()
-            self.path = path_points[::-1] + self.path  # prepend to path
+            self.path = path_points[:-1] + self.path  # prepend to path
             current = self.array_to_tuple(path_points[0])
         self.path = [self.start] + self.path
-        self.path.reverse()  # reverse to get from start to goal
+        # self.path.reverse()  # reverse to get from start to goal
         return self.path
 
-    
+    def animate_tree(self, interval=0.001):
+        """
+        Animate the RRT tree expansion.
+        Call this after the search() loop or inside search() every iteration.
+        """
+
+        # Create a figure only once
+        if not hasattr(self, "_fig"):
+            self._fig, self._ax = plt.subplots()
+            self.map.display(self._ax)
+            self._ax.scatter(self.start[0], self.start[1], c='green', s=80, label="start")
+            self._ax.scatter(self.goal[0], self.goal[1], c='orange', s=80, label="goal")
+            self._ax.set_title("RRT Tree Expansion")
+            self._ax.set_xlim(0, self.map.width)
+            self._ax.set_ylim(0, self.map.height)
+            self._ax.legend()
+
+            # store artists so we don’t redraw everything
+            self._edge_lines = []
+
+        # Draw new edges
+        for child, trajectories in self.E.items():
+            if hasattr(self, "_drawn") and child in self._drawn:
+                continue  # already drawn
+
+            L_new = trajectories[0]       # full segment: [parent, ..., child]
+            parent = L_new[0]
+            child_xy = L_new[-1]
+
+            # Extract x,y only
+            px, py = parent[0], parent[1]
+            cx, cy = child_xy[0], child_xy[1]
+
+            # Draw edge
+            line, = self._ax.plot([px, cx], [py, cy], '-', color="blue", linewidth=0.7)
+            self._edge_lines.append(line)
+
+            # Mark as drawn
+            if not hasattr(self, "_drawn"):
+                self._drawn = set()
+            self._drawn.add(child)
+
+        plt.pause(interval)
     def plot_path(self, path, fig_name="rrt_path.pdf"):
         fig, ax = plt.subplots()
         ax = self.map.display(ax)
@@ -161,9 +222,9 @@ class RRT:
 
 if __name__ == "__main__":
     quad = quad_dyn()
-    start = np.array([2.5, 5.0, 0.0, 0.0])
-    goal = np.array([7.5, 5.0, 0.0, 0.0])
-    rrt = RRT(start=start, goal=goal, map_type=1, quad=quad)
+    start = np.array([7, 1.50, 0.0, 0.0])
+    goal = np.array([3, 8.0, 0.0, 0.0])
+    rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad)
     path, iterations = rrt.search()
     print(path)
     rrt.plot_path(path)
