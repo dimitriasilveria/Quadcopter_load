@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from icecream import ic
 
 class RRT:
-    def __init__(self, start, goal, quad, map_type,l=30, epsilon=0.01, step=2.5, goal_tolerance=0.5):
+    def __init__(self, start, goal, quad, map_type,l=30, epsilon=0.01, step=2.5, goal_tolerance=1):
         self.start = start
         self.goal = goal
         self.epsilon = epsilon
@@ -40,7 +40,7 @@ class RRT:
         self.dt = self.quad.dt
         self.min_vel = -5.0
         self.max_vel = 5.0
-        self.K = np.diag([2.0, 2.0, 1.5, 1.5])  # weighting matrix for cost function
+        self.K = np.diag([2.0, 2.0, 0, 0])  # weighting matrix for cost function
 
     def sample(self) -> NDArray:
         p = random.random()
@@ -52,7 +52,6 @@ class RRT:
             vx = random.uniform(self.min_vel, self.max_vel)
             vy = random.uniform(self.min_vel, self.max_vel)
             return np.array([x, y, vx, vy, 0.0, 0.0]).reshape((6,1)) # position, velocity, acceleration
-
                 
     def nearest(self, q_rand: NDArray) -> NDArray:
         min_dist = np.inf
@@ -71,8 +70,8 @@ class RRT:
         t = 0.0
         
         x = l_near.flatten()
-        self.quad.x[0:2] = x[0:2].reshape((2,1))  # initial load position
-        self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
+        self.quad.x = x.reshape((8,1))
+        # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
         Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
         #simulate
         while t < tf:
@@ -130,7 +129,7 @@ class RRT:
         return tuple(float(x) for x in arr.flatten())
 
     def reconstruct_path(self, q_new):
-        
+
         current = self.array_to_tuple(q_new)
         print(current, self.array_to_tuple(self.start))
         while current != self.array_to_tuple(self.start):
@@ -158,7 +157,7 @@ class RRT:
         #     plt.plot([child[0], parent[0]], [child[1], parent[1]], c='gray', linewidth=0.5)
         plt.legend()
         plt.savefig(fig_name)
-        # plt.show()
+        plt.show()
 
 if __name__ == "__main__":
     quad = quad_dyn()
