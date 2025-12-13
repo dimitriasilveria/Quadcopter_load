@@ -42,6 +42,7 @@ class RRT:
         self.quad.x[2:4] = np.array(self.start[2:4]).reshape((2,1))  # initial load velocity
         self.E_states = {}  # Edges in the tree
         self.E_states[self.array_to_tuple(self.start)] = self.quad.x.flatten()
+        self.E_efforts = {}
         self.E = {}  # Edges in the tree
         # self.E[self.start] = None  # start has no parent
         self.dt = self.quad.dt
@@ -81,7 +82,7 @@ class RRT:
         # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
         Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
         #simulate
-
+        Efforts = []
         while t < tf:
             n_points = 10  # number of intermediate states per dt
             t_eval = np.linspace(t, t + self.dt, n_points)
@@ -111,8 +112,9 @@ class RRT:
                 if self.map.is_free((state[0], state[1]), quad_pos.flatten(), self.quad.L, state[6]) == False:
                     return None, None
             Pos_vel.append(x[0:4])  # store load position and velocity
+
         Quad_states = x  # store quad states
-        return Pos_vel, Quad_states
+        return Pos_vel, Quad_states, 
 
     def search(self, num_iter=1e5, seed=None):
         if seed is not None:

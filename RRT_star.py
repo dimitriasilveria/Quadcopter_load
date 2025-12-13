@@ -26,6 +26,8 @@ class RRT:
         if obstacles == 5:
             obstacle_gap = 3.0
             self.map.obstacles_five(obstacle_gap)
+        self.goal_found = False
+        self.check_list = [499, 2499, 4999]
         # if map_type == 1:
         #     self.map.obstacles_one(l)
         # elif map_type == 2:
@@ -74,6 +76,7 @@ class RRT:
     
     def cost_to_come(self, q):
         cost = 0
+        current = q
         while not np.array_equal(current, self.start):
             if self.array_to_tuple(current) in self.E:
                 path = self.E[self.array_to_tuple(current)][0]
@@ -81,25 +84,26 @@ class RRT:
                 P = np.vstack(path)
                 diffs = np.diff(P[:,:], axis=0)
                 for i in range(diffs.shape[0]):
-                    cost += diffs[i].T @ self.K[0:2,0:2] @ diffs[i]
+                    cost += diffs[i].reshape((4,1)).T @ self.K @ diffs[i]
                 current = path[0]
             else:
                 break
-        return cost
+        return float(cost)
     
     def rewire(self, q_new, neighbors):
         cost_new = self.cost_to_come(q_new)
         for neighbor in neighbors:
             if np.array_equal(neighbor, self.start):
                 continue  # Don't rewire the start node
-            diff = q_new - np.array(neighbor).reshape((4,1))
-            cost_new_neigh = diff.T @ self.K[0:2,0:2] @ diff
-            tentative_cost = cost_new + cost_new_neigh
+            diff = (q_new - np.array(neighbor)).reshape((4,1))
+            cost_new_neigh = diff.T @ self.K @ diff
+            tentative_cost = cost_new + float(cost_new_neigh)
             current_cost = self.cost_to_come(neighbor)
             if  tentative_cost < current_cost:
                 # Rewire
                 nearest_states = self.E_states[self.array_to_tuple(q_new)]
-                L_new, States_new = self.steer(nearest_states, np.array(neighbor).reshape((4,1)))
+                ic(nearest_states)
+                L_new, States_new = self.steer_toward_node(nearest_states, np.hstack((np.array(neighbor), np.array([0.0, 0.0]))).reshape((6,1)))
                 if L_new is not None:
                     self.E[self.array_to_tuple(neighbor)] = [L_new]
                     self.E_states[self.array_to_tuple(neighbor)] = States_new
@@ -111,17 +115,35 @@ class RRT:
         elif k > len(self.V):
             k = len(self.V)
         tree = KDTree(self.V)
-        _, idxs = tree.query(q_new, k=k)
+        _, idxs = tree.query(self.array_to_tuple(q_new), k=k)
         if len(idxs.shape) == 0:
             idxs = [idxs]
-        neighbors = [self.V[i] for i in idxs]
+        neighbors = [np.array(self.V[i]) for i in idxs]
         return neighbors
+
+    def best_parent(self, q_new, neighbors):
+        best_cost = np.inf
+        best_parent = None
+        L_new = None
+        States_new = None
+        for neighbor in neighbors:
+            if not np.array_equal(neighbor, self.goal):
+                cost_q = self.cost_to_come(neighbor)
+                diff = (q_new - neighbor).reshape((4,1))
+                cost = diff.T @ self.K @ diff
+                total_cost = cost_q + cost
+                if total_cost < best_cost:
+                    states = self.E_states[self.array_to_tuple(neighbor)]
+                    L_new, States_new = self.steer_toward_node(states, np.hstack((q_new, np.array([0.0, 0.0]))).reshape((6,1)))
+                    if L_new is not None:
+                        best_cost = total_cost
+                        best_parent = neighbor
+        return best_parent, L_new, States_new
 
     def steer_toward_node(self, l_near: NDArray, l_rand: NDArray) -> NDArray:
         #l_near and l_rand contain positions, velocities, and accelerations
-        tf = 5
+        tf = 3
         t = 0.0
-        
         x = l_near.flatten()
         self.quad.x = x.reshape((8,1))
         # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
@@ -206,7 +228,7 @@ class RRT:
         Quad_states = x  # store quad states
         return Pos_vel, Quad_states
 
-    def search(self, num_iter=1e5, seed=None):
+    def search(self, num_iter=1e4, seed=None):
         if seed is not None:
             random.seed(seed)
 
@@ -215,29 +237,37 @@ class RRT:
             l_nearest = self.nearest(l_rand)
             nearest_states = self.E_states[l_nearest]
             L_new, Q_new = self.steer(nearest_states, l_rand)
-
             if L_new is None:
                 continue
-
+            neighbors = self.neighborhood(L_new[-1])
+            best_parent, L_best, Q_best = self.best_parent(L_new[-1], neighbors)
+            if L_best is not None:
+                L_new = L_best
+                Q_new = Q_best
             l_new = L_new[-1]
             l_new_point = self.array_to_tuple(l_new)
 
             if l_new_point not in self.V:
                 self.V.append(l_new_point)
 
-            self.E[l_new_point] = [L_new]
-            self.E_states[l_new_point] = Q_new
+                self.E[l_new_point] = [L_new]
+                self.E_states[l_new_point] = Q_new
+            if not np.array_equal(l_new, self.goal):
+                self.rewire(l_new, neighbors)
 
             # 🔥 Animate tree expansion
-            # self.animate_tree()
-
+            self.animate_tree()
+            if i in self.check_list:
+                self.get_stats(i)
             # Goal check
             if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < self.goal_tolerance:
                 print("Goal reached!")
-                return self.reconstruct_path(l_new), i
-
-        print("Goal not reached within max iterations.")
-        return None, i
+                self.goal_found = True
+        if self.goal_found:
+            return self.reconstruct_path(l_new), i
+        else:
+            print("Goal not reached within max iterations.")
+            return None, i
 
 
     def array_to_tuple(self, arr):
@@ -247,8 +277,6 @@ class RRT:
         current = self.array_to_tuple(q_new)
         while current != self.array_to_tuple(self.start):
             path_points = self.E[current][0]
-            # print(path_points)
-            # input()
             self.path = path_points[:-1] + self.path  # prepend to path
             current = self.array_to_tuple(path_points[0])
         self.path = [self.start] + self.path
@@ -262,6 +290,26 @@ class RRT:
             yaml.dump(self.info_dict, file)
         # self.path.reverse()  # reverse to get from start to goal
         return self.path
+
+    def get_stats(self, i):
+        if i == self.check_list[0]:
+            if self.goal_found:
+                self.path_length_0 = self.cost_to_come(self.goal)
+                self.path_0 = self.reconstruct_path()
+                self.E_0 = self.E.copy()
+                self.V_0 = self.V.copy()
+        if i == self.check_list[1]:
+            if self.goal_found:
+                self.path_length_1 = self.cost_to_come(self.goal)
+                self.path_1 = self.reconstruct_path()
+                self.E_1 = self.E.copy()
+                self.V_1 = self.V.copy()
+        if i == self.check_list[2]:
+            if self.goal_found:
+                self.path_length_2 = self.cost_to_come(self.goal)
+                self.path_2 = self.reconstruct_path()
+                self.E_2 = self.E.copy()
+                self.V_2 = self.V.copy()   
 
     def animate_tree(self, interval=0.001):
         """
@@ -323,7 +371,7 @@ class RRT:
         plt.show()
 
 if __name__ == "__main__":
-    folder_name = "RRT_paths_2D_obstacle_5"
+    folder_name = "RRT_star_paths_2D_obstacle_5"
     os.makedirs(folder_name, exist_ok=True)
     for i in range(100):
         print(i)
@@ -332,3 +380,4 @@ if __name__ == "__main__":
         goal = np.array([3, 8.0, 0.0, 0.0])
         rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
         path, iterations = rrt.search(seed=i)
+        rrt.plot_path(path, fig_name=f"{folder_name}/rrt_path_seed_{i}.pdf")
