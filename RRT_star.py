@@ -287,6 +287,7 @@ class RRT:
             if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < self.goal_tolerance:
                 print("Goal reached!")
                 self.goal_found = True
+                self.info_dict[f"goal found with {i} iterations"] = {}
                 if self.goal_neighbor is not None:
                     if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < np.linalg.norm(self.goal_neighbor[0:2] - np.array(self.goal[0:2])):
                         self.goal_neighbor = l_new

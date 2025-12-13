@@ -9,7 +9,9 @@ from numpy.typing import NDArray
 from icecream import ic
 import os
 import yaml
-
+class NoAliasDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
 class RRT:
     def __init__(self, start, goal, quad, obstacles,l=30, epsilon=0.01, step=2.5, goal_tolerance=0.5, file_name="rrt_path.yaml"):
         self.start = start
@@ -82,14 +84,15 @@ class RRT:
         # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
         Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
         #simulate
-        Efforts = []
+        Commands_control = []
+        latest_control = [None, None]
         while t < tf:
             n_points = 10  # number of intermediate states per dt
             t_eval = np.linspace(t, t + self.dt, n_points)
             t_span = (t, t + self.dt)
             sol = solve_ivp(
                 fun=lambda tt, xx: closed_loop_dynamics_point(
-                    tt, xx, self.quad, controller, l_rand, self.info_dict
+                    tt, xx, self.quad, controller, l_rand, latest_control
                 ),
                 t_span=t_span,
                 y0=x,
@@ -110,11 +113,12 @@ class RRT:
                 x_l = state[0:2].reshape((2,1))
                 quad_pos = x_l + self.quad.l * np.array([[-np.sin(state[4])],[np.cos(state[4])]])
                 if self.map.is_free((state[0], state[1]), quad_pos.flatten(), self.quad.L, state[6]) == False:
-                    return None, None
+                    return None, None, None
             Pos_vel.append(x[0:4])  # store load position and velocity
+            Commands_control.append(latest_control)
 
         Quad_states = x  # store quad states
-        return Pos_vel, Quad_states, 
+        return Pos_vel, Quad_states, Commands_control
 
     def search(self, num_iter=1e5, seed=None):
         if seed is not None:
@@ -124,7 +128,7 @@ class RRT:
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
             nearest_states = self.E_states[l_nearest]
-            L_new, Q_new = self.steer(nearest_states, l_rand)
+            L_new, Q_new, Commands_new = self.steer(nearest_states, l_rand)
 
             if L_new is None:
                 continue
@@ -137,6 +141,7 @@ class RRT:
 
             self.E[l_new_point] = [L_new]
             self.E_states[l_new_point] = Q_new
+            self.E_efforts[l_new_point] = Commands_new
 
             # 🔥 Animate tree expansion
             # self.animate_tree()
@@ -155,8 +160,10 @@ class RRT:
 
     def reconstruct_path(self, q_new):
         current = self.array_to_tuple(q_new)
+        commands = []
         while current != self.array_to_tuple(self.start):
             path_points = self.E[current][0]
+            commands += self.E_efforts[current]
             # print(path_points)
             # input()
             self.path = path_points[:-1] + self.path  # prepend to path
@@ -168,8 +175,9 @@ class RRT:
         path_length = np.sum(segment_lengths)
         self.info_dict['path_length'] = str(path_length)
         self.info_dict['num_iterations'] = len(self.V)
+        self.info_dict['commands'] = commands
         with open(self.file_name, 'w') as file:
-            yaml.dump(self.info_dict, file)
+            yaml.dump(self.info_dict, file, Dumper=NoAliasDumper)
         # self.path.reverse()  # reverse to get from start to goal
         return self.path
 
