@@ -1,4 +1,5 @@
 import numpy as np
+from icecream import ic
 def controller(q, traj, quad):
     """
     Explicit controller matching your Python state ordering.
@@ -148,7 +149,7 @@ def closed_loop_dynamics(t, x, quad, controller, trajectory):
     # 4. Return flat vector (required by integrators)
     return x_dot.flatten()
 
-def closed_loop_dynamics_point(t, x, quad, controller, trajectory, file = None):
+def closed_loop_dynamics_point(t, x, quad, controller, trajectory, commands_list):
     """
     This is the exact equivalent of quadLoadDynamics.m
     """
@@ -158,9 +159,9 @@ def closed_loop_dynamics_point(t, x, quad, controller, trajectory, file = None):
 
     # 2. Control
     f, tau = controller(x, trajectory, quad)
-    if file is not None:
-        file['f'].append(float(f))
-        file['tau'].append(float(tau))
+    if commands_list is not None:
+        commands_list[0] = float(tau)
+        commands_list[1] = float(f)
     # 3. System dynamics
     x_dot = quad.dynamics(x.reshape((quad.n_states, 1)), f, tau)
     

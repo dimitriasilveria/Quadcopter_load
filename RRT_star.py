@@ -10,6 +10,9 @@ from icecream import ic
 from scipy.spatial import KDTree
 import os
 import yaml
+class NoAliasDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data):
+        return True
 
 class RRT:
     def __init__(self, start, goal, quad, obstacles,l=30, epsilon=0.01, step=2.5, goal_tolerance=0.5, file_name="rrt_path.yaml"):
@@ -22,12 +25,16 @@ class RRT:
         self.map_width = 10
         self.map = Map(self.map_width, self.map_height,step)
         self.file_name = file_name
-        self.info_dict = {'f':[], 'tau':[]}
+        self.info_dict = {}
+        self.states_file_step = "states_aux.csv"
+        self.states_file_step_node = "states_best_parent_aux.csv"
         if obstacles == 5:
             obstacle_gap = 3.0
             self.map.obstacles_five(obstacle_gap)
         self.goal_found = False
+        self.goal_neighbor = None
         self.check_list = [499, 2499, 4999]
+        # self.check_list = [4, 24, 49]
         # if map_type == 1:
         #     self.map.obstacles_one(l)
         # elif map_type == 2:
@@ -46,11 +53,18 @@ class RRT:
         self.E_states = {}  # Edges in the tree
         self.E_states[self.array_to_tuple(self.start)] = self.quad.x.flatten()
         self.E = {}  # Edges in the tree
+        self.E_commands = {} #dictionary to save the commands
         # self.E[self.start] = None  # start has no parent
         self.dt = self.quad.dt
         self.min_vel = -5.0
         self.max_vel = 5.0
         self.K = np.diag([1.0, 1.0, 4, 4])  # weighting matrix for cost function
+        self.cost_0 = None
+        self.cost_1 = None
+        self.cost_2 = None
+        self.path_length_0 = None
+        self.path_length_1 = None
+        self.path_length_2 = None
 
     def sample(self) -> NDArray:
         p = random.random()
@@ -102,11 +116,12 @@ class RRT:
             if  tentative_cost < current_cost:
                 # Rewire
                 nearest_states = self.E_states[self.array_to_tuple(q_new)]
-                ic(nearest_states)
-                L_new, States_new = self.steer_toward_node(nearest_states, np.hstack((np.array(neighbor), np.array([0.0, 0.0]))).reshape((6,1)))
+                L_new, States_new, Commands_new = self.steer_toward_node(nearest_states, np.hstack((np.array(neighbor), np.array([0.0, 0.0]))).reshape((6,1)))
                 if L_new is not None:
-                    self.E[self.array_to_tuple(neighbor)] = [L_new]
-                    self.E_states[self.array_to_tuple(neighbor)] = States_new
+                    neighbor_tuple = self.array_to_tuple(neighbor)
+                    self.E[neighbor_tuple] = [L_new]
+                    self.E_states[neighbor_tuple] = States_new
+                    self.E_commands[neighbor_tuple] = Commands_new
     
     def neighborhood(self, q_new):
         k = int(np.ceil(np.e*1.5*np.log(len(self.V))))
@@ -124,8 +139,9 @@ class RRT:
     def best_parent(self, q_new, neighbors):
         best_cost = np.inf
         best_parent = None
-        L_new = None
-        States_new = None
+        L_best = None
+        States_best = None
+        Commands_best = None
         for neighbor in neighbors:
             if not np.array_equal(neighbor, self.goal):
                 cost_q = self.cost_to_come(neighbor)
@@ -134,11 +150,14 @@ class RRT:
                 total_cost = cost_q + cost
                 if total_cost < best_cost:
                     states = self.E_states[self.array_to_tuple(neighbor)]
-                    L_new, States_new = self.steer_toward_node(states, np.hstack((q_new, np.array([0.0, 0.0]))).reshape((6,1)))
+                    L_new, States_new, Commands_new = self.steer_toward_node(states, np.hstack((q_new, np.array([0.0, 0.0]))).reshape((6,1)))
                     if L_new is not None:
                         best_cost = total_cost
                         best_parent = neighbor
-        return best_parent, L_new, States_new
+                        L_best = L_new
+                        States_best = States_new
+                        Commands_best = Commands_new
+        return best_parent, L_best, States_best, Commands_best
 
     def steer_toward_node(self, l_near: NDArray, l_rand: NDArray) -> NDArray:
         #l_near and l_rand contain positions, velocities, and accelerations
@@ -148,15 +167,15 @@ class RRT:
         self.quad.x = x.reshape((8,1))
         # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
         Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
-        #simulate
-
-        while (np.linalg.norm(x[0:2]-l_rand[0:2].flatten()) > 0.1):
+        latest_control = [None, None]
+        Commands_control = []
+        while (np.linalg.norm(x[0:2]-l_rand[0:2].flatten()) > 0.001):
             n_points = 10  # number of intermediate states per dt
             t_eval = np.linspace(t, t + self.dt, n_points)
             t_span = (t, t + self.dt)
             sol = solve_ivp(
                 fun=lambda tt, xx: closed_loop_dynamics_point(
-                    tt, xx, self.quad, controller, l_rand, self.info_dict
+                    tt, xx, self.quad, controller, l_rand, latest_control
                 ),
                 t_span=t_span,
                 y0=x,
@@ -173,17 +192,18 @@ class RRT:
             x[7] = np.clip(x[7], -np.pi, np.pi)
             t = sol.t[-1]
             if (t > tf):
-                print("Exceeded time limit in steer_toward_node")
-                return None, None
+                # print("Exceeded time limit in steer_toward_node")
+                return None, None, None
             x_l = x[0:2].reshape((2,1))
             for state in sol.y.T:
                 x_l = state[0:2].reshape((2,1))
                 quad_pos = x_l + self.quad.l * np.array([[-np.sin(state[4])],[np.cos(state[4])]])
                 if self.map.is_free((state[0], state[1]), quad_pos.flatten(), self.quad.L, state[6]) == False:
-                    return None, None
+                    return None, None, None
             Pos_vel.append(x[0:4])  # store load position and velocity
+            Commands_control.append(latest_control)
         Quad_states = x  # store quad states
-        return Pos_vel, Quad_states
+        return Pos_vel, Quad_states, Commands_control
 
     def steer(self, l_near: NDArray, l_rand: NDArray) -> NDArray:
         #l_near and l_rand contain positions, velocities, and accelerations
@@ -195,14 +215,15 @@ class RRT:
         # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
         Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
         #simulate
-
+        Commands_control = []
+        latest_control = [None, None]
         while t < tf:
             n_points = 10  # number of intermediate states per dt
             t_eval = np.linspace(t, t + self.dt, n_points)
             t_span = (t, t + self.dt)
             sol = solve_ivp(
                 fun=lambda tt, xx: closed_loop_dynamics_point(
-                    tt, xx, self.quad, controller, l_rand, self.info_dict
+                    tt, xx, self.quad, controller, l_rand, latest_control
                 ),
                 t_span=t_span,
                 y0=x,
@@ -223,93 +244,127 @@ class RRT:
                 x_l = state[0:2].reshape((2,1))
                 quad_pos = x_l + self.quad.l * np.array([[-np.sin(state[4])],[np.cos(state[4])]])
                 if self.map.is_free((state[0], state[1]), quad_pos.flatten(), self.quad.L, state[6]) == False:
-                    return None, None
+                    return None, None, None
             Pos_vel.append(x[0:4])  # store load position and velocity
+            Commands_control.append(latest_control)
         Quad_states = x  # store quad states
-        return Pos_vel, Quad_states
+        return Pos_vel, Quad_states, Commands_control
 
     def search(self, num_iter=1e4, seed=None):
         if seed is not None:
             random.seed(seed)
 
         for i in range(int(num_iter)):
+            ic(i)
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
             nearest_states = self.E_states[l_nearest]
-            L_new, Q_new = self.steer(nearest_states, l_rand)
+            L_new, Q_new, Commands_new = self.steer(nearest_states, l_rand)
             if L_new is None:
                 continue
             neighbors = self.neighborhood(L_new[-1])
-            best_parent, L_best, Q_best = self.best_parent(L_new[-1], neighbors)
+            best_parent, L_best, Q_best, Commands_best = self.best_parent(L_new[-1], neighbors)
             if L_best is not None:
                 L_new = L_best
                 Q_new = Q_best
+                Commands_new = Commands_best
             l_new = L_new[-1]
             l_new_point = self.array_to_tuple(l_new)
 
             if l_new_point not in self.V:
                 self.V.append(l_new_point)
-
                 self.E[l_new_point] = [L_new]
                 self.E_states[l_new_point] = Q_new
+                self.E_commands[l_new_point] = Commands_new
             if not np.array_equal(l_new, self.goal):
                 self.rewire(l_new, neighbors)
 
             # 🔥 Animate tree expansion
-            self.animate_tree()
+            # self.animate_tree()
             if i in self.check_list:
                 self.get_stats(i)
             # Goal check
             if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < self.goal_tolerance:
                 print("Goal reached!")
                 self.goal_found = True
+                if self.goal_neighbor is not None:
+                    if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < np.linalg.norm(self.goal_neighbor[0:2] - np.array(self.goal[0:2])):
+                        self.goal_neighbor = l_new
+                else:
+                    self.goal_neighbor = l_new
+                # self.info_dict['num_iteretions_to_find_goal'] = i
+        
         if self.goal_found:
-            return self.reconstruct_path(l_new), i
+            num_iterations = i
+            path, path_length, commands, cost = self.reconstruct_path(l_new)
+            self.info_dict[f'{num_iterations} iterations:'] = {}
+            self.info_dict[f'{num_iterations} iterations:']['path_lenght'] = float(path_length)
+            self.info_dict[f'{num_iterations} iterations:']['commands'] = commands
+            self.info_dict[f'{num_iterations} iterations:']['cost'] = cost
+            with open(self.file_name, 'w') as file:
+                yaml.dump(self.info_dict, file, Dumper=NoAliasDumper)
+            return path
         else:
+            with open(self.file_name, 'w') as file:
+                yaml.dump(self.info_dict, file, Dumper=NoAliasDumper)
             print("Goal not reached within max iterations.")
-            return None, i
+            return None
 
 
     def array_to_tuple(self, arr):
         return tuple(float(x) for x in arr.flatten())
 
     def reconstruct_path(self, q_new):
+        path = []
         current = self.array_to_tuple(q_new)
+        cost = self.cost_to_come(q_new)
+        commands = []
         while current != self.array_to_tuple(self.start):
             path_points = self.E[current][0]
-            self.path = path_points[:-1] + self.path  # prepend to path
+            commands += self.E_commands[current]
+            path = path_points[:-1] + path  # prepend to path
             current = self.array_to_tuple(path_points[0])
-        self.path = [self.start] + self.path
-        P = np.vstack(self.path)
+        path = [self.start] + path
+        P = np.vstack(path)
         diffs = np.diff(P[:,0:2], axis=0)
         segment_lengths = np.linalg.norm(diffs, axis=1)
         path_length = np.sum(segment_lengths)
-        self.info_dict['path_length'] = str(path_length)
-        self.info_dict['num_iterations'] = len(self.V)
-        with open(self.file_name, 'w') as file:
-            yaml.dump(self.info_dict, file)
-        # self.path.reverse()  # reverse to get from start to goal
-        return self.path
+        # num_iterations = len(self.V)
+        commands = commands
 
-    def get_stats(self, i):
-        if i == self.check_list[0]:
+
+        # self.path.reverse()  # reverse to get from start to goal
+        return path, path_length, commands, cost
+
+    def get_stats(self, num_iterations):
+        if num_iterations == self.check_list[0]:
             if self.goal_found:
-                self.path_length_0 = self.cost_to_come(self.goal)
-                self.path_0 = self.reconstruct_path()
-                self.E_0 = self.E.copy()
-                self.V_0 = self.V.copy()
-        if i == self.check_list[1]:
+                path, path_length, commands, cost = self.reconstruct_path(self.goal_neighbor)
+                self.info_dict[f'{num_iterations} iterations:'] = {}
+                self.info_dict[f'{num_iterations} iterations:']['path_lenght'] = float(path_length)
+                self.info_dict[f'{num_iterations} iterations:']['commands'] = commands
+                self.info_dict[f'{num_iterations} iterations:']['cost'] = cost
+                # self.E_0 = self.E.copy()
+                # self.V_0 = self.V.copy()
+        if num_iterations == self.check_list[1]:
             if self.goal_found:
-                self.path_length_1 = self.cost_to_come(self.goal)
-                self.path_1 = self.reconstruct_path()
-                self.E_1 = self.E.copy()
-                self.V_1 = self.V.copy()
-        if i == self.check_list[2]:
+                self.cost_1 = self.cost_to_come(self.goal)
+                path, path_length, commands, cost = self.reconstruct_path(self.goal_neighbor)
+                self.info_dict[f'{num_iterations} iterations:'] = {}
+                self.info_dict[f'{num_iterations} iterations:']['path_lenght'] = float(path_length)
+                self.info_dict[f'{num_iterations} iterations:']['commands'] = commands
+                self.info_dict[f'{num_iterations} iterations:']['cost'] = cost
+                # self.E_1 = self.E.copy()
+                # self.V_1 = self.V.copy()
+        if num_iterations == self.check_list[2]:
             if self.goal_found:
-                self.path_length_2 = self.cost_to_come(self.goal)
-                self.path_2 = self.reconstruct_path()
-                self.E_2 = self.E.copy()
-                self.V_2 = self.V.copy()   
+                path, path_length, commands, cost = self.reconstruct_path(self.goal_neighbor)
+                self.info_dict[f'{num_iterations} iterations:'] = {}
+                self.info_dict[f'{num_iterations} iterations:']['path_lenght'] = float(path_length)
+                self.info_dict[f'{num_iterations} iterations:']['commands'] = commands
+                self.info_dict[f'{num_iterations} iterations:']['cost'] = cost
+                # self.E_2 = self.E.copy()
+                # self.V_2 = self.V.copy() 
 
     def animate_tree(self, interval=0.001):
         """
@@ -379,5 +434,5 @@ if __name__ == "__main__":
         start = np.array([7, 1.50, 0.0, 0.0])
         goal = np.array([3, 8.0, 0.0, 0.0])
         rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
-        path, iterations = rrt.search(seed=i)
-        rrt.plot_path(path, fig_name=f"{folder_name}/rrt_path_seed_{i}.pdf")
+        path = rrt.search(seed=i, num_iter=50)
+        # rrt.plot_path(path, fig_name=f"{folder_name}/rrt_path_seed_{i}.pdf")
