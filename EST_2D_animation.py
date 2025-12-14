@@ -28,9 +28,10 @@ class EST():
             os.makedirs("info_obstacle_5", exist_ok=True)
             self.file_name = f"est_seed_{seed}_obstacle_{obstacle_gap}.yaml" if seed is not None else "est.yaml"
         else:
-            self.map.obstacles_four()
-            os.makedirs("info_obstacle_4", exist_ok=True)
-            self.file_name = f"est_seed_{seed}_obstacle_4.yaml" if seed is not None else "est.yaml"
+            self.map.obstacles_one(4)
+            file_dir = "est_obstacle_1"
+            os.makedirs(file_dir, exist_ok=True)
+            self.file_name = f"{file_dir}/est_seed_{seed}_obstacle_1.yaml" if seed is not None else "est.yaml"
         # self.map.obstacles_one(3)
         # self.map.obstacles_two()
         
@@ -190,9 +191,9 @@ def search_animate(obstacles, seed):
     quad = quad_w_load_dyn()
     start_state = np.zeros((quad.n_states,1))
     start_state[0:quad.n_states] = quad.x.copy()
-    start_point = (7.0,1.5)
+    start_point = (5.2,1.5)
     start_state[0:2] = np.array([[start_point[0]],[start_point[1]]])
-    goal = (3,8.0)
+    goal = (3,2.0)
     est = EST(start_point, start_state, goal, quad, obstacles=obstacles, seed=seed)
 
     fig, ax = plt.subplots()
@@ -354,4 +355,4 @@ def search_animate(obstacles, seed):
 if __name__ == "__main__":
     for i in range(100):
         seed = i
-        search_animate(obstacles=5, seed=i)
+        search_animate(obstacles=1, seed=i)

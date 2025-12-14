@@ -255,7 +255,6 @@ class RRT:
             random.seed(seed)
 
         for i in range(int(num_iter)):
-            ic(i)
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
             nearest_states = self.E_states[l_nearest]
@@ -435,5 +434,5 @@ if __name__ == "__main__":
         start = np.array([7, 1.50, 0.0, 0.0])
         goal = np.array([3, 8.0, 0.0, 0.0])
         rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
-        path = rrt.search(seed=i, num_iter=50)
+        path = rrt.search(seed=i, num_iter=5e3)
         # rrt.plot_path(path, fig_name=f"{folder_name}/rrt_path_seed_{i}.pdf")
