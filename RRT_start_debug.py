@@ -127,7 +127,9 @@ class RRT:
                     # l_new_point = self.array_to_tuple(l_new)
                     # neighbor_tuple = self.array_to_tuple(neighbor)
                     self.E[neighbor] = [L_new]
+                    States_new[0:4] = np.asarray(q_new)
                     self.E_states[neighbor] = States_new
+                    ic(q_new, neighbor)
                     self.E_commands[neighbor] = Commands_new
     
     def neighborhood(self, q_new):
@@ -269,8 +271,8 @@ class RRT:
         begin = time.time()
         for i in range(int(num_iter)):
             ic(i)
-            if i in self.check_list:
-                self.get_stats(i)
+            # if i in self.check_list:
+            #     self.get_stats(i)
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
             nearest_states = self.E_states[l_nearest]
@@ -287,7 +289,6 @@ class RRT:
                 Commands_new = Commands_best
                 l_new = L_new[-1]
                 l_new_point = self.array_to_tuple(l_new)
-
             if l_new_point not in self.V:
                 self.V.append(l_new_point)
                 self.E[l_new_point] = [L_new]
@@ -304,7 +305,7 @@ class RRT:
                 # print(f"Goal reached iteration {i}!")
                 self.goal_found = True
                 self.info_dict[f"goal found with {i} iterations"] = {}
-                cost = self.cost_to_come(l_new)
+                cost = self.cost_to_come(l_new_point)
                 if cost < self.best_goal_cost:
                     self.best_goal_cost = cost
                     self.best_goal_node = l_new_point
@@ -467,7 +468,7 @@ class RRT:
 if __name__ == "__main__":
     folder_name = "RRT_star_paths_2D_obstacle_5"
     os.makedirs(folder_name, exist_ok=True)
-    for i in range(33,100):
+    for i in range(37,100):
         print(i)
         quad = quad_dyn()
         # start = np.array([7, 1.50, 0.0, 0.0])
