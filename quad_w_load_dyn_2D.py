@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from icecream import ic
 from matplotlib.animation import FuncAnimation
 import matplotlib
-matplotlib.use('TkAgg')   # or 'Qt5Agg' if you have Qt
+# matplotlib.use('TkAgg')   # or 'Qt5Agg' if you have Qt
 from mpl_toolkits.mplot3d import Axes3D
 #import ode from scipy
 from scipy.integrate import RK45
