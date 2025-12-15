@@ -27,6 +27,11 @@ class RRT:
         if obstacles == 5:
             obstacle_gap = 3.0
             self.map.obstacles_five(obstacle_gap)
+        elif obstacles == 1:
+            self.map.obstacles_one(4)
+            file_dir = "rrt_obstacle_1"
+            os.makedirs(file_dir, exist_ok=True)
+
         # if map_type == 1:
         #     self.map.obstacles_one(l)
         # elif map_type == 2:
@@ -148,7 +153,7 @@ class RRT:
 
             # Goal check
             if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < self.goal_tolerance:
-                print("Goal reached!")
+                # print("Goal reached!")
                 return self.reconstruct_path(l_new), i
 
         print("Goal not reached within max iterations.")
@@ -241,14 +246,14 @@ class RRT:
         plt.show()
 
 if __name__ == "__main__":
-    folder_name = "RRT_paths_2D_obstacle_5"
+    folder_name = "RRT_paths_2D_obstacle_1"
     os.makedirs(folder_name, exist_ok=True)
     for i in range(100):
         print(i)
         quad = quad_dyn()
-        start = np.array([7, 1.50, 0.0, 0.0])
-        goal = np.array([3, 8.0, 0.0, 0.0])
-        rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
+        start = np.array([5.2, 1.50, 0.0, 0.0])
+        goal = np.array([3, 2.0, 0.0, 0.0])
+        rrt = RRT(start=start, goal=goal, obstacles=1, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
         path, iterations = rrt.search(seed=i)
         # print(path)
         # rrt.plot_path(path)
