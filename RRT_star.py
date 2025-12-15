@@ -32,9 +32,10 @@ class RRT:
             obstacle_gap = 3.0
             self.map.obstacles_five(obstacle_gap)
         self.goal_found = False
-        self.goal_neighbor = None
-        self.check_list = [499, 2499, 4999]
-        # self.check_list = [4, 24, 49]
+        self.best_goal_node = None
+        self.best_goal_cost = np.inf
+        self.check_list = [199, 249, 499]
+        # self.check_list = [49, 249, 400]
         # if map_type == 1:
         #     self.map.obstacles_one(l)
         # elif map_type == 2:
@@ -250,11 +251,13 @@ class RRT:
         Quad_states = x  # store quad states
         return Pos_vel, Quad_states, Commands_control
 
-    def search(self, num_iter=1e4, seed=None):
+    def search(self, num_iter=500, seed=None):
         if seed is not None:
             random.seed(seed)
 
         for i in range(int(num_iter)):
+            if i in self.check_list:
+                self.get_stats(i)
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
             nearest_states = self.E_states[l_nearest]
@@ -280,27 +283,25 @@ class RRT:
 
             # 🔥 Animate tree expansion
             # self.animate_tree()
-            if i in self.check_list:
-                self.get_stats(i)
             # Goal check
-            if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < self.goal_tolerance:
-                print("Goal reached!")
+            if self.in_goal_region(l_new):
+                # print(f"Goal reached iteration {i}!")
                 self.goal_found = True
                 self.info_dict[f"goal found with {i} iterations"] = {}
-                if self.goal_neighbor is not None:
-                    if np.linalg.norm(np.array(l_new[0:2]) - np.array(self.goal[0:2])) < np.linalg.norm(self.goal_neighbor[0:2] - np.array(self.goal[0:2])):
-                        self.goal_neighbor = l_new
-                else:
-                    self.goal_neighbor = l_new
+                cost = self.cost_to_come(l_new)
+                if cost < self.best_goal_cost:
+                    self.best_goal_cost = cost
+                    self.best_goal_node = l_new
                 # self.info_dict['num_iteretions_to_find_goal'] = i
+
         
         if self.goal_found:
             num_iterations = i
-            path, path_length, commands, cost = self.reconstruct_path(l_new)
+            path, path_length, commands = self.reconstruct_path(self.best_goal_node)
             self.info_dict[f'{num_iterations} iterations:'] = {}
             self.info_dict[f'{num_iterations} iterations:']['path_lenght'] = float(path_length)
             self.info_dict[f'{num_iterations} iterations:']['commands'] = commands
-            self.info_dict[f'{num_iterations} iterations:']['cost'] = cost
+            self.info_dict[f'{num_iterations} iterations:']['cost'] = self.best_goal_cost
             with open(self.file_name, 'w') as file:
                 yaml.dump(self.info_dict, file, Dumper=NoAliasDumper)
             return path
@@ -309,7 +310,15 @@ class RRT:
                 yaml.dump(self.info_dict, file, Dumper=NoAliasDumper)
             print("Goal not reached within max iterations.")
             return None
-
+    def edge_cost(self, L):
+        cost = 0.0
+        for i in range(1, len(L)):
+            diff = (L[i] - L[i-1]).reshape(4,1)
+            cost += float(diff.T @ self.K @ diff)
+        return cost
+    
+    def in_goal_region(self,l_new):
+        return np.linalg.norm(l_new[0:2]-self.goal[0:2]) <= self.goal_tolerance
 
     def array_to_tuple(self, arr):
         return tuple(float(x) for x in arr.flatten())
@@ -317,7 +326,7 @@ class RRT:
     def reconstruct_path(self, q_new):
         path = []
         current = self.array_to_tuple(q_new)
-        cost = self.cost_to_come(q_new)
+        # cost = self.cost_to_come(q_new)
         commands = []
         while current != self.array_to_tuple(self.start):
             path_points = self.E[current][0]
@@ -334,35 +343,35 @@ class RRT:
 
 
         # self.path.reverse()  # reverse to get from start to goal
-        return path, path_length, commands, cost
+        return path, path_length, commands
 
     def get_stats(self, num_iterations):
         if num_iterations == self.check_list[0]:
             if self.goal_found:
-                path, path_length, commands, cost = self.reconstruct_path(self.goal_neighbor)
+                path, path_length, commands = self.reconstruct_path(self.best_goal_node)
                 self.info_dict[f'{num_iterations} iterations:'] = {}
                 self.info_dict[f'{num_iterations} iterations:']['path_lenght'] = float(path_length)
                 self.info_dict[f'{num_iterations} iterations:']['commands'] = commands
-                self.info_dict[f'{num_iterations} iterations:']['cost'] = cost
+                self.info_dict[f'{num_iterations} iterations:']['cost'] = self.best_goal_cost
                 # self.E_0 = self.E.copy()
                 # self.V_0 = self.V.copy()
         if num_iterations == self.check_list[1]:
             if self.goal_found:
                 self.cost_1 = self.cost_to_come(self.goal)
-                path, path_length, commands, cost = self.reconstruct_path(self.goal_neighbor)
+                path, path_length, commands = self.reconstruct_path(self.best_goal_node)
                 self.info_dict[f'{num_iterations} iterations:'] = {}
                 self.info_dict[f'{num_iterations} iterations:']['path_lenght'] = float(path_length)
                 self.info_dict[f'{num_iterations} iterations:']['commands'] = commands
-                self.info_dict[f'{num_iterations} iterations:']['cost'] = cost
+                self.info_dict[f'{num_iterations} iterations:']['cost'] = self.best_goal_cost
                 # self.E_1 = self.E.copy()
                 # self.V_1 = self.V.copy()
         if num_iterations == self.check_list[2]:
             if self.goal_found:
-                path, path_length, commands, cost = self.reconstruct_path(self.goal_neighbor)
+                path, path_length, commands = self.reconstruct_path(self.best_goal_node)
                 self.info_dict[f'{num_iterations} iterations:'] = {}
                 self.info_dict[f'{num_iterations} iterations:']['path_lenght'] = float(path_length)
                 self.info_dict[f'{num_iterations} iterations:']['commands'] = commands
-                self.info_dict[f'{num_iterations} iterations:']['cost'] = cost
+                self.info_dict[f'{num_iterations} iterations:']['cost'] = self.best_goal_cost
                 # self.E_2 = self.E.copy()
                 # self.V_2 = self.V.copy() 
 
@@ -428,11 +437,11 @@ class RRT:
 if __name__ == "__main__":
     folder_name = "RRT_star_paths_2D_obstacle_5"
     os.makedirs(folder_name, exist_ok=True)
-    for i in range(100):
+    for i in range(31,100):
         print(i)
         quad = quad_dyn()
         start = np.array([7, 1.50, 0.0, 0.0])
         goal = np.array([3, 8.0, 0.0, 0.0])
         rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
-        path = rrt.search(seed=i, num_iter=5e3)
+        path = rrt.search(seed=i, num_iter=2000)
         # rrt.plot_path(path, fig_name=f"{folder_name}/rrt_path_seed_{i}.pdf")
