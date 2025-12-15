@@ -10,6 +10,7 @@ from icecream import ic
 from scipy.spatial import KDTree
 import os
 import yaml
+import time
 class NoAliasDumper(yaml.SafeDumper):
     def ignore_aliases(self, data):
         return True
@@ -47,12 +48,12 @@ class RRT:
 
         self.path_length = 0
         self.path = []
-        self.V = [self.array_to_tuple(self.start)]  # List of vertices
+        self.V = [self.start]  # List of vertices
         self.quad = quad
         self.quad.x[0:2] = np.array(self.start[0:2]).reshape((2,1))  # initial load position
         self.quad.x[2:4] = np.array(self.start[2:4]).reshape((2,1))  # initial load velocity
         self.E_states = {}  # Edges in the tree
-        self.E_states[self.array_to_tuple(self.start)] = self.quad.x.flatten()
+        self.E_states[self.start] = self.quad.x.flatten()
         self.E = {}  # Edges in the tree
         self.E_commands = {} #dictionary to save the commands
         # self.E[self.start] = None  # start has no parent
@@ -67,23 +68,24 @@ class RRT:
         self.path_length_1 = None
         self.path_length_2 = None
 
-    def sample(self) -> NDArray:
+    def sample(self) -> tuple:
         p = random.random()
         if p < self.epsilon:
-            return np.hstack((self.goal, np.array([0.0, 0.0]))).reshape((6,1))  # position, velocity, acceleration
+            return self.goal  # position, velocity, acceleration
         else:
             x = random.uniform(0, self.map.width)
             y = random.uniform(0, self.map.height)
             vx = random.uniform(self.min_vel, self.max_vel)
             vy = random.uniform(self.min_vel, self.max_vel)
-            return np.array([x, y, vx, vy, 0.0, 0.0]).reshape((6,1)) # position, velocity, acceleration
+            return (x, y, vx, vy) # position, velocity, acceleration
                 
-    def nearest(self, q_rand: NDArray) -> NDArray:
+    def nearest(self, q_rand: tuple) -> tuple:
         min_dist = np.inf
         q_near = None
         for v in self.V:
             v_array = np.array(v).reshape((4,1))
-            dist = (q_rand[0:4] - v_array).T @ self.K @ (q_rand[0:4] - v_array)
+            q_rand_array = np.array(q_rand).reshape((4,1))
+            dist = (q_rand_array[0:4] - v_array).T @ self.K @ (q_rand_array[0:4] - v_array)
             if dist < min_dist:
                 min_dist = dist
                 q_near = v
@@ -92,52 +94,53 @@ class RRT:
     def cost_to_come(self, q):
         cost = 0
         current = q
-        while not np.array_equal(current, self.start):
-            if self.array_to_tuple(current) in self.E:
-                path = self.E[self.array_to_tuple(current)][0]
+        while current != self.start:
+            if current in self.E:
+                path = self.E[current][0]
                 # print(f"Current node: {current}, Parent: {self.E[current][0]}")
                 P = np.vstack(path)
                 diffs = np.diff(P[:,:], axis=0)
                 for i in range(diffs.shape[0]):
                     cost += diffs[i].reshape((4,1)).T @ self.K @ diffs[i]
-                current = path[0]
+                current = self.array_to_tuple(path[0])
             else:
+                print(f"node {current} not in the tree")
                 break
         return float(cost)
     
     def rewire(self, q_new, neighbors):
+
         cost_new = self.cost_to_come(q_new)
         for neighbor in neighbors:
-            if np.array_equal(neighbor, self.start):
+            if neighbor == self.start:
                 continue  # Don't rewire the start node
-            diff = (q_new - np.array(neighbor)).reshape((4,1))
+            diff = (np.array(q_new) - np.array(neighbor)).reshape((4,1))
             cost_new_neigh = diff.T @ self.K @ diff
             tentative_cost = cost_new + float(cost_new_neigh)
             current_cost = self.cost_to_come(neighbor)
             if  tentative_cost < current_cost:
                 # Rewire
-                nearest_states = self.E_states[self.array_to_tuple(q_new)]
+                nearest_states = self.E_states[q_new]
                 L_new, States_new, Commands_new = self.steer_toward_node(nearest_states, np.hstack((np.array(neighbor), np.array([0.0, 0.0]))).reshape((6,1)))
                 if L_new is not None:
-                    l_new = L_new[-1]
-                    l_new_point = self.array_to_tuple(l_new)
-                    neighbor_tuple = self.array_to_tuple(neighbor)
-                    self.E[neighbor_tuple] = [L_new]
-                    self.E_states[neighbor_tuple] = States_new
-                    self.E_commands[neighbor_tuple] = Commands_new
+                    # l_new = L_new[-1]
+                    # l_new_point = self.array_to_tuple(l_new)
+                    # neighbor_tuple = self.array_to_tuple(neighbor)
+                    self.E[neighbor] = [L_new]
+                    self.E_states[neighbor] = States_new
+                    self.E_commands[neighbor] = Commands_new
     
     def neighborhood(self, q_new):
         k = int(np.ceil(np.e*1.5*np.log(len(self.V))))
-        ic(k)
         if k < 1:
             k = 1
         elif k > len(self.V):
             k = len(self.V)
         tree = KDTree(self.V)
-        _, idxs = tree.query(self.array_to_tuple(q_new), k=k)
+        _, idxs = tree.query(q_new, k=k)
         if len(idxs.shape) == 0:
             idxs = [idxs]
-        neighbors = [np.array(self.V[i]) for i in idxs]
+        neighbors = [self.V[i] for i in idxs]
         return neighbors
 
     def best_parent(self, q_new, neighbors):
@@ -146,15 +149,16 @@ class RRT:
         L_best = None
         States_best = None
         Commands_best = None
+        q_new_array = np.array(q_new)
         for neighbor in neighbors:
             if not np.array_equal(neighbor, self.goal):
                 cost_q = self.cost_to_come(neighbor)
-                diff = (q_new - neighbor).reshape((4,1))
+                diff = (q_new_array - np.array(neighbor)).reshape((4,1))
                 cost = diff.T @ self.K @ diff
                 total_cost = cost_q + cost
                 if total_cost < best_cost:
-                    states = self.E_states[self.array_to_tuple(neighbor)]
-                    L_new, States_new, Commands_new = self.steer_toward_node(states, np.hstack((q_new, np.array([0.0, 0.0]))).reshape((6,1)))
+                    states = self.E_states[neighbor]
+                    L_new, States_new, Commands_new = self.steer_toward_node(states, np.hstack((q_new_array, np.array([0.0, 0.0]))).reshape((6,1)))
                     if L_new is not None:
                         best_cost = total_cost
                         best_parent = neighbor
@@ -209,6 +213,10 @@ class RRT:
         Quad_states = x  # store quad states
         return Pos_vel, Quad_states, Commands_control
 
+    # def float_to_int(self, v):
+    #     multiplier = 1e5
+    #     return (int(v[0]*10000),int(v[1]*10000),int(v[2]*10000),int(v[3]*10000))
+
     def steer(self, l_near: NDArray, l_rand: NDArray) -> NDArray:
         #l_near and l_rand contain positions, velocities, and accelerations
         tf = 1
@@ -257,6 +265,8 @@ class RRT:
     def search(self, num_iter=500, seed=None):
         if seed is not None:
             random.seed(seed)
+            self.seed = seed
+        begin = time.time()
         for i in range(int(num_iter)):
             ic(i)
             if i in self.check_list:
@@ -264,29 +274,32 @@ class RRT:
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
             nearest_states = self.E_states[l_nearest]
-            L_new, Q_new, Commands_new = self.steer(nearest_states, l_rand)
+            L_new, Q_new, Commands_new = self.steer(nearest_states, np.hstack((np.array(l_rand), np.array([0.0, 0.0]))).reshape((6,1)))
             if L_new is None:
                 continue
-            neighbors = self.neighborhood(L_new[-1])
-            best_parent, L_best, Q_best, Commands_best = self.best_parent(L_new[-1], neighbors)
+            l_new = L_new[-1]
+            l_new_point = self.array_to_tuple(l_new)
+            neighbors = self.neighborhood(l_new_point)
+            best_parent, L_best, Q_best, Commands_best = self.best_parent(l_new_point, neighbors)
             if L_best is not None:
                 L_new = L_best
                 Q_new = Q_best
                 Commands_new = Commands_best
-            l_new = L_new[-1]
-            l_new_point = self.array_to_tuple(l_new)
+                l_new = L_new[-1]
+                l_new_point = self.array_to_tuple(l_new)
 
             if l_new_point not in self.V:
                 self.V.append(l_new_point)
                 self.E[l_new_point] = [L_new]
                 self.E_states[l_new_point] = Q_new
                 self.E_commands[l_new_point] = Commands_new
-            if not np.array_equal(l_new, self.goal):
-                self.rewire(l_new, neighbors)
+            if l_new_point != self.goal:
+                self.rewire(l_new_point, neighbors)
 
             # 🔥 Animate tree expansion
             # self.animate_tree()
             # Goal check
+
             if self.in_goal_region(l_new):
                 # print(f"Goal reached iteration {i}!")
                 self.goal_found = True
@@ -294,10 +307,19 @@ class RRT:
                 cost = self.cost_to_come(l_new)
                 if cost < self.best_goal_cost:
                     self.best_goal_cost = cost
-                    self.best_goal_node = l_new
+                    self.best_goal_node = l_new_point
                 # self.info_dict['num_iteretions_to_find_goal'] = i
 
-        
+        end = time.time()
+        time_diff = end - begin
+
+        # Get total seconds
+        total_seconds = time_diff
+
+        # Convert to minutes and seconds
+        minutes = int(total_seconds // 60)
+        seconds = int(total_seconds % 60)
+        self.info_dict[f'execution time'] = (minutes, seconds)
         if self.goal_found:
             num_iterations = i
             path, path_length, commands = self.reconstruct_path(self.best_goal_node)
@@ -328,10 +350,15 @@ class RRT:
 
     def reconstruct_path(self, q_new):
         path = []
-        current = self.array_to_tuple(q_new)
+        current = q_new
         # cost = self.cost_to_come(q_new)
         commands = []
-        while current != self.array_to_tuple(self.start):
+        while current != self.start:
+            if current not in self.E:
+                print(f"Error: Node {current} not found in self.E. Cannot reconstruct path.")
+                self.info_dict['error seed'] = self.seed
+                self.info_dict['self.E'] = self.E
+                return None, 0, None  # Stop and return an error state
             path_points = self.E[current][0]
             commands += self.E_commands[current]
             path = path_points[:-1] + path  # prepend to path
@@ -443,8 +470,10 @@ if __name__ == "__main__":
     for i in range(33,100):
         print(i)
         quad = quad_dyn()
-        start = np.array([7, 1.50, 0.0, 0.0])
-        goal = np.array([3, 8.0, 0.0, 0.0])
+        # start = np.array([7, 1.50, 0.0, 0.0])
+        # goal = np.array([3, 8.0, 0.0, 0.0])
+        start = (7, 1.50, 0.0, 0.0)
+        goal = (3, 8.0, 0.0, 0.0)
         rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
         path = rrt.search(seed=i, num_iter=2000)
         # rrt.plot_path(path, fig_name=f"{folder_name}/rrt_path_seed_{i}.pdf")
