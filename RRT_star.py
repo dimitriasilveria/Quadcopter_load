@@ -10,6 +10,7 @@ from icecream import ic
 from scipy.spatial import KDTree
 import os
 import yaml
+import time
 class NoAliasDumper(yaml.SafeDumper):
     def ignore_aliases(self, data):
         return True
@@ -128,7 +129,6 @@ class RRT:
     
     def neighborhood(self, q_new):
         k = int(np.ceil(np.e*1.5*np.log(len(self.V))))
-        ic(k)
         if k < 1:
             k = 1
         elif k > len(self.V):
@@ -257,6 +257,7 @@ class RRT:
     def search(self, num_iter=500, seed=None):
         if seed is not None:
             random.seed(seed)
+        begin = time.time()
         for i in range(int(num_iter)):
             ic(i)
             if i in self.check_list:
@@ -287,6 +288,7 @@ class RRT:
             # 🔥 Animate tree expansion
             # self.animate_tree()
             # Goal check
+
             if self.in_goal_region(l_new):
                 # print(f"Goal reached iteration {i}!")
                 self.goal_found = True
@@ -297,7 +299,16 @@ class RRT:
                     self.best_goal_node = l_new
                 # self.info_dict['num_iteretions_to_find_goal'] = i
 
-        
+        end = time.time()
+        time_diff = end - begin
+
+        # Get total seconds
+        total_seconds = time_diff
+
+        # Convert to minutes and seconds
+        minutes = int(total_seconds // 60)
+        seconds = int(total_seconds % 60)
+        self.info_dict[f'execution time'] = (minutes, seconds)
         if self.goal_found:
             num_iterations = i
             path, path_length, commands = self.reconstruct_path(self.best_goal_node)
@@ -332,6 +343,11 @@ class RRT:
         # cost = self.cost_to_come(q_new)
         commands = []
         while current != self.array_to_tuple(self.start):
+            if current not in self.E:
+                print(f"Error: Node {current} not found in self.E. Cannot reconstruct path.")
+                self.info_dict['error seed'] = self.seed
+                self.info_dict['self.E'] = self.E
+                return None, 0, None  # Stop and return an error state
             path_points = self.E[current][0]
             commands += self.E_commands[current]
             path = path_points[:-1] + path  # prepend to path

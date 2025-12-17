@@ -129,7 +129,7 @@ class RRT:
                     self.E[neighbor] = [L_new]
                     States_new[0:4] = np.asarray(q_new)
                     self.E_states[neighbor] = States_new
-                    ic(q_new, neighbor)
+                    # ic(q_new, neighbor)
                     self.E_commands[neighbor] = Commands_new
     
     def neighborhood(self, q_new):
