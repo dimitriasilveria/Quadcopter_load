@@ -31,6 +31,7 @@ class RRT:
             self.map.obstacles_one(4)
             file_dir = "rrt_obstacle_1"
             os.makedirs(file_dir, exist_ok=True)
+        
 
         # if map_type == 1:
         #     self.map.obstacles_one(l)
@@ -49,6 +50,8 @@ class RRT:
         self.quad.x[2:4] = np.array(self.start[2:4]).reshape((2,1))  # initial load velocity
         self.E_states = {}  # Edges in the tree
         self.E_states[self.array_to_tuple(self.start)] = self.quad.x.flatten()
+        self.states_path = []
+        self.start_state = self.quad.x.flatten().copy()
         self.E_efforts = {}
         self.E = {}  # Edges in the tree
         # self.E[self.start] = None  # start has no parent
@@ -109,9 +112,9 @@ class RRT:
                 # Update state
             x = sol.y.T[-1]
             x[4] = np.clip(x[4], -np.pi/4, np.pi/4)  # keep angles within -pi/4 to pi/4
+            x[5] = np.clip(x[5], -np.pi/1.5, np.pi/1.5)  # limit angular velocities
             x[6] = np.clip(x[6], -np.pi/2, np.pi/2)
-            x[5] = np.clip(x[5], -np.pi, np.pi)  # limit angular velocities
-            x[7] = np.clip(x[7], -np.pi, np.pi)
+            x[7] = np.clip(x[7], -np.pi/1.5, np.pi/1.5)
             t = sol.t[-1]
             x_l = x[0:2].reshape((2,1))
             for state in sol.y.T:
@@ -165,15 +168,18 @@ class RRT:
 
     def reconstruct_path(self, q_new):
         current = self.array_to_tuple(q_new)
+        # self.states_path = [self.E_states[current]]
         commands = []
         while current != self.array_to_tuple(self.start):
             path_points = self.E[current][0]
             commands += self.E_efforts[current]
-            # print(path_points)
-            # input()
-            self.path = path_points[:-1] + self.path  # prepend to path
+            self.states_path = [self.E_states[current].copy().tolist()] + self.states_path
+
+            self.path = path_points[:-1] + self.path  # prepend to path            
             current = self.array_to_tuple(path_points[0])
         self.path = [self.start] + self.path
+
+        self.states_path = [self.start_state] + self.states_path
         P = np.vstack(self.path)
         diffs = np.diff(P[:,0:2], axis=0)
         segment_lengths = np.linalg.norm(diffs, axis=1)
@@ -181,10 +187,160 @@ class RRT:
         self.info_dict['path_length'] = str(path_length)
         self.info_dict['num_iterations'] = len(self.V)
         self.info_dict['commands'] = commands
-        with open(self.file_name, 'w') as file:
-            yaml.dump(self.info_dict, file, Dumper=NoAliasDumper)
+        self.plot_result(fname='figures/rrt_scenario_1')
+        # with open(self.file_name, 'w') as file:
+        #     yaml.dump(self.info_dict, file, Dumper=NoAliasDumper)
         # self.path.reverse()  # reverse to get from start to goal
+
         return self.path
+
+    def plot_result(self, show=True, save=True, fname="rrt_result.png"):
+        fig, ax = plt.subplots(figsize=(7, 7))
+
+        # --- Plot obstacles ---
+        for obs in self.map.obstacles:
+            (ox1, oy1), (ox2, oy2) = obs
+            ax.fill([ox1, ox2, ox2, ox1],
+                    [oy1, oy1, oy2, oy2],
+                    color="gray", alpha=0.5)
+
+        # --- Plot sampled nodes ---
+        V = np.array(self.V)
+        ax.scatter(V[:, 0], V[:, 1],
+                s=10, c="lightblue", label="Sampled nodes")
+
+
+
+        # --- Plot path if it exists ---
+        if self.path:
+            path = np.array(self.path)
+
+            # Load path
+            # ax.plot(path[:, 0], path[:, 1],
+            #         c="blue", linewidth=2, label="Load path")
+
+            # --- Quadcopter path ---
+            quad_path = []
+
+            for x in self.states_path:
+                self.quad.x = np.array(x).reshape((8,1)).copy()
+                q = self.quad.quad_position().flatten()
+                quad_path.append(q)
+
+            quad_path = np.array(quad_path)
+
+            # Insert NaNs between discontinuous segments
+            quad_x = quad_path[:, 0].astype(float)
+            quad_y = quad_path[:, 1].astype(float)
+
+            # Break line wherever jump is too large
+            jump_thresh = 0.5   # meters (tune if needed)
+
+            dx = np.diff(quad_x)
+            dy = np.diff(quad_y)
+            dist = np.sqrt(dx**2 + dy**2)
+
+            breaks = np.where(dist > jump_thresh)[0] + 1
+
+            quad_x = np.insert(quad_x, breaks, np.nan)
+            quad_y = np.insert(quad_y, breaks, np.nan)
+
+            ax.plot(quad_x, quad_y,
+                    linestyle="--",
+                    linewidth=2,
+                    color="orange",
+                    label="Quad path")
+
+            # --- Draw final quad + load ---
+            if self.states_path:
+
+                # Initial configuration
+                self.draw_quad_glyph(
+                    ax,
+                    self.states_path[0],
+                    color="#bbbbbb",   # light gray
+                    zorder=8
+                )
+
+                # Final configuration
+                self.draw_quad_glyph(
+                    ax,
+                    self.states_path[-1],
+                    color="#7b4ab2",   # purple
+                    zorder=9
+                )
+                
+        # --- Start & goal ---
+        ax.scatter(*self.start[0:2], s=120, c="green", marker="o", label="Start")
+        ax.scatter(*self.goal[0:2], s=120, c="red", marker="*", label="Goal")
+
+        ax.set_aspect("equal")
+        ax.set_xlim(0, self.map.width)
+        ax.set_ylim(0, self.map.height)
+        ax.set_xlabel("x [m]")
+        ax.set_ylabel("y [m]")
+        ax.legend()
+        ax.grid(True)
+
+        if save:
+            plt.savefig(fname, dpi=300)
+        if show:
+            plt.show()
+        plt.close()
+
+    def draw_quad_glyph(self, ax, x_state, color="#7b4ab2", zorder=6):
+        """
+        Draw a stylized quad + load configuration (T-shape)
+        """
+        x_state = np.array(x_state).reshape((8,1))
+        self.quad.x = x_state.copy()
+
+        # Positions
+        x_l = x_state[0:2].flatten()
+        x_q = self.quad.quad_position().flatten()
+
+        theta = float(x_state[4, 0])
+        L = self.quad.L
+
+        # Horizontal arm direction
+        arm_dir = np.array([np.cos(theta), np.sin(theta)])
+
+        # Motor positions (LEFT and RIGHT)
+        m_left  = x_q - L * arm_dir
+        m_right = x_q + L * arm_dir
+
+        # ---- Arm ----
+        ax.plot([m_left[0], m_right[0]],
+                [m_left[1], m_right[1]],
+                linewidth=5,
+                color=color,
+                zorder=zorder)
+
+        # ---- Quad body ----
+        ax.scatter(x_q[0], x_q[1],
+                s=70, marker="s",
+                color=color,
+                zorder=zorder + 1)
+
+        # ---- Motors (BOTH) ----
+        ax.scatter([m_left[0], m_right[0]],
+                [m_left[1], m_right[1]],
+                s=40,
+                color="#f4a6c1",
+                zorder=zorder + 2)
+
+        # ---- Cable ----
+        ax.plot([x_q[0], x_l[0]],
+                [x_q[1], x_l[1]],
+                linewidth=3,
+                color="black",
+                zorder=zorder - 1)
+
+        # ---- Load ----
+        ax.scatter(x_l[0], x_l[1],
+                s=50,
+                color="black",
+                zorder=zorder)
 
     def animate_tree(self, interval=0.001):
         """
@@ -248,7 +404,7 @@ class RRT:
 if __name__ == "__main__":
     folder_name = "RRT_paths_2D_obstacle_1"
     os.makedirs(folder_name, exist_ok=True)
-    for i in range(100):
+    for i in range(0,1):
         print(i)
         quad = quad_dyn()
         start = np.array([5.2, 1.50, 0.0, 0.0])
