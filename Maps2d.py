@@ -1,5 +1,8 @@
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+plt.rcParams["text.usetex"] = True
+mpl.rcParams["font.size"] = 14
 
 class Map:
     def __init__(self, width, height, step=2.5):
@@ -153,9 +156,12 @@ class Map:
         # plt.show()
 
 if __name__ == "__main__":
+    figures_path = 'figures'
     m = Map(10, 10)
     m.obstacles_one(4)
     m.display()
+    plt.savefig(f"{figures_path}/scenario_2", bbox_inches='tight')
+    plt.close()
 
     # m2 = Map(10, 10)
     # m2.obstacles_two()
@@ -172,4 +178,6 @@ if __name__ == "__main__":
     m = Map(10, 10)
     m.obstacles_five(3.)
     m.display()
-    plt.show()
+    plt.savefig(f"{figures_path}/scenario_1", bbox_inches='tight')
+    plt.close()
+    # plt.show()

@@ -9,6 +9,9 @@ from numpy.typing import NDArray
 from icecream import ic
 import os
 import yaml
+import matplotlib as mpl
+plt.rcParams["text.usetex"] = True
+mpl.rcParams["font.size"] = 16
 class NoAliasDumper(yaml.SafeDumper):
     def ignore_aliases(self, data):
         return True
@@ -31,17 +34,6 @@ class RRT:
             self.map.obstacles_one(4)
             file_dir = "rrt_obstacle_1"
             os.makedirs(file_dir, exist_ok=True)
-        
-
-        # if map_type == 1:
-        #     self.map.obstacles_one(l)
-        # elif map_type == 2:
-        #     self.map.obstacles_two()
-        # elif map_type == 3:
-        #     self.map.obstacles_three()
-        # elif map_type == 4:
-        #     self.map.obstacles_four()
-
         self.path_length = 0
         self.path = []
         self.V = [self.array_to_tuple(self.start)]  # List of vertices
@@ -49,7 +41,7 @@ class RRT:
         self.quad.x[0:2] = np.array(self.start[0:2]).reshape((2,1))  # initial load position
         self.quad.x[2:4] = np.array(self.start[2:4]).reshape((2,1))  # initial load velocity
         self.E_states = {}  # Edges in the tree
-        self.E_states[self.array_to_tuple(self.start)] = self.quad.x.flatten()
+        self.E_states[self.array_to_tuple(self.start)] = [self.quad.x.flatten()]
         self.states_path = []
         self.start_state = self.quad.x.flatten().copy()
         self.E_efforts = {}
@@ -91,6 +83,7 @@ class RRT:
         self.quad.x = x.reshape((8,1))
         # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
         Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
+        Quad_states = [l_near.copy()]  # ✅ FIX: Store ALL quadcopter states along the trajectory
         #simulate
         Commands_control = []
         latest_control = [None, None]
@@ -123,9 +116,9 @@ class RRT:
                 if self.map.is_free((state[0], state[1]), quad_pos.flatten(), self.quad.L, state[6]) == False:
                     return None, None, None
             Pos_vel.append(x[0:4])  # store load position and velocity
+            Quad_states.append(x.copy())  # ✅ FIX: Store intermediate quadcopter state
             Commands_control.append(latest_control)
 
-        Quad_states = x  # store quad states
         return Pos_vel, Quad_states, Commands_control
 
     def search(self, num_iter=1e5, seed=None):
@@ -135,7 +128,7 @@ class RRT:
         for i in range(int(num_iter)):
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
-            nearest_states = self.E_states[l_nearest]
+            nearest_states = self.E_states[l_nearest][-1]  # ✅ FIX: Get the last state from the list
             L_new, Q_new, Commands_new = self.steer(nearest_states, l_rand)
 
             if L_new is None:
@@ -148,7 +141,7 @@ class RRT:
                 self.V.append(l_new_point)
 
             self.E[l_new_point] = [L_new]
-            self.E_states[l_new_point] = Q_new
+            self.E_states[l_new_point] = Q_new  # ✅ Now this is a list of states
             self.E_efforts[l_new_point] = Commands_new
 
             # 🔥 Animate tree expansion
@@ -173,27 +166,48 @@ class RRT:
         while current != self.array_to_tuple(self.start):
             path_points = self.E[current][0]
             commands += self.E_efforts[current]
-            self.states_path = [self.E_states[current].copy().tolist()] + self.states_path
+            
+            # ✅ FIX: Add all intermediate states, not just the last one
+            segment_states = self.E_states[current]
+            self.states_path = segment_states[:-1] + self.states_path  # exclude last to avoid duplication
 
             self.path = path_points[:-1] + self.path  # prepend to path            
             current = self.array_to_tuple(path_points[0])
+        
         self.path = [self.start] + self.path
-
         self.states_path = [self.start_state] + self.states_path
+        
         P = np.vstack(self.path)
         diffs = np.diff(P[:,0:2], axis=0)
         segment_lengths = np.linalg.norm(diffs, axis=1)
         path_length = np.sum(segment_lengths)
+        cost = self.cost_to_come(q_new)
         self.info_dict['path_length'] = str(path_length)
         self.info_dict['num_iterations'] = len(self.V)
         self.info_dict['commands'] = commands
-        self.plot_result(fname='figures/rrt_scenario_1')
-        # with open(self.file_name, 'w') as file:
-        #     yaml.dump(self.info_dict, file, Dumper=NoAliasDumper)
-        # self.path.reverse()  # reverse to get from start to goal
+        self.info_dict['path_cost'] = cost
+        self.info_dict['states'] = self.states_path
+        # self.plot_result(fname='figures/rrt_scenario_2')
+        with open(self.file_name, 'w') as file:
+            yaml.dump(self.info_dict, file, Dumper=NoAliasDumper)
+        self.path.reverse()  # reverse to get from start to goal
 
         return self.path
-
+    def cost_to_come(self, q):
+        cost = 0
+        current = q
+        while not np.array_equal(current, self.start):
+            if self.array_to_tuple(current) in self.E:
+                path = self.E[self.array_to_tuple(current)][0]
+                # print(f"Current node: {current}, Parent: {self.E[current][0]}")
+                P = np.vstack(path)
+                diffs = np.diff(P[:,:], axis=0)
+                for i in range(diffs.shape[0]):
+                    cost += diffs[i].reshape((4,1)).T @ self.K @ diffs[i]
+                current = path[0]
+            else:
+                break
+        return float(cost)
     def plot_result(self, show=True, save=True, fname="rrt_result.png"):
         fig, ax = plt.subplots(figsize=(7, 7))
 
@@ -208,7 +222,17 @@ class RRT:
         V = np.array(self.V)
         ax.scatter(V[:, 0], V[:, 1],
                 s=10, c="lightblue", label="Sampled nodes")
+        # --- Plot RRT dynamical tree (full trajectories) ---
+        for child, trajectories in self.E.items():
+            seg = np.array(trajectories[0])  # shape: (N, 4) [x, y, vx, vy]
 
+            ax.plot(
+                seg[:, 0], seg[:, 1],
+                color="#6baed6",
+                linewidth=0.6,
+                alpha=0.5,
+                zorder=1
+            )
 
 
         # --- Plot path if it exists ---
@@ -216,36 +240,27 @@ class RRT:
             path = np.array(self.path)
 
             # Load path
-            # ax.plot(path[:, 0], path[:, 1],
-            #         c="blue", linewidth=2, label="Load path")
+            ax.plot(path[:, 0], path[:, 1],
+                    c="blue", linewidth=2, label="Load path")
 
             # --- Quadcopter path ---
             quad_path = []
 
             for x in self.states_path:
-                self.quad.x = np.array(x).reshape((8,1)).copy()
+                # Handle both list and array formats
+                if isinstance(x, list):
+                    x_array = np.array(x).reshape((8,1))
+                else:
+                    x_array = x.reshape((8,1))
+                    
+                self.quad.x = x_array.copy()
                 q = self.quad.quad_position().flatten()
                 quad_path.append(q)
 
             quad_path = np.array(quad_path)
 
-            # Insert NaNs between discontinuous segments
-            quad_x = quad_path[:, 0].astype(float)
-            quad_y = quad_path[:, 1].astype(float)
-
-            # Break line wherever jump is too large
-            jump_thresh = 0.5   # meters (tune if needed)
-
-            dx = np.diff(quad_x)
-            dy = np.diff(quad_y)
-            dist = np.sqrt(dx**2 + dy**2)
-
-            breaks = np.where(dist > jump_thresh)[0] + 1
-
-            quad_x = np.insert(quad_x, breaks, np.nan)
-            quad_y = np.insert(quad_y, breaks, np.nan)
-
-            ax.plot(quad_x, quad_y,
+            # Plot continuous quadcopter path (no breaks needed now)
+            ax.plot(quad_path[:, 0], quad_path[:, 1],
                     linestyle="--",
                     linewidth=2,
                     color="orange",
@@ -279,7 +294,7 @@ class RRT:
         ax.set_ylim(0, self.map.height)
         ax.set_xlabel("x [m]")
         ax.set_ylabel("y [m]")
-        ax.legend()
+        ax.legend(loc='upper right')
         ax.grid(True)
 
         if save:
@@ -292,7 +307,12 @@ class RRT:
         """
         Draw a stylized quad + load configuration (T-shape)
         """
-        x_state = np.array(x_state).reshape((8,1))
+        # Handle both list and array formats
+        if isinstance(x_state, list):
+            x_state = np.array(x_state).reshape((8,1))
+        else:
+            x_state = x_state.reshape((8,1))
+            
         self.quad.x = x_state.copy()
 
         # Positions
@@ -359,7 +379,7 @@ class RRT:
             self._ax.set_ylim(0, self.map.height)
             self._ax.legend()
 
-            # store artists so we don’t redraw everything
+            # store artists so we don't redraw everything
             self._edge_lines = []
 
         # Draw new edges
@@ -404,11 +424,14 @@ class RRT:
 if __name__ == "__main__":
     folder_name = "RRT_paths_2D_obstacle_1"
     os.makedirs(folder_name, exist_ok=True)
-    for i in range(0,1):
+    for i in range(71,100):
         print(i)
         quad = quad_dyn()
         start = np.array([5.2, 1.50, 0.0, 0.0])
         goal = np.array([3, 2.0, 0.0, 0.0])
+        #scenario 1, obstacle 5
+        # start = np.array([7, 1.50, 0.0, 0.0])
+        # goal = np.array([3, 8.0, 0.0, 0.0])
         rrt = RRT(start=start, goal=goal, obstacles=1, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
         path, iterations = rrt.search(seed=i)
         # print(path)

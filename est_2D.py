@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib as mpl
 from quad_w_load_dyn_2D import quad_w_load_dyn
 from icecream import ic
 from Maps2d import Map
@@ -7,6 +8,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import yaml
 import os
+plt.rcParams["text.usetex"] = True
+mpl.rcParams["font.size"] = 16
 
 class EST():
     def __init__(self, start_point, start_state, goal, quad, obstacles=5, seed=None):
@@ -31,8 +34,9 @@ class EST():
         # self.map.obstacles_two()
         
         self.path = []
-        self.states_path = [start_state]
+        self.states_path = []
         self.V = [start_point]
+        self.E_parent = {}   # child -> parent
         self.E_points = {}
         self.tau_path = []
         self.f_path = []
@@ -64,6 +68,10 @@ class EST():
             commands[0,i-1] = tau
             commands[1,i-1] = f
             x = self.quad.runge_kutta_step(x, f, tau)
+            x[4] = np.clip(x[4], -np.pi/4, np.pi/4)  # keep angles within -pi/4 to pi/4
+            x[5] = np.clip(x[5], -np.pi/1.5, np.pi/1.5)  # limit angular velocities
+            x[6] = np.clip(x[6], -np.pi/2, np.pi/2)
+            x[7] = np.clip(x[7], -np.pi/1.5, np.pi/1.5)
             points[:,i] = x.flatten()
             quad_pos[:,i] = self.quad.quad_position().flatten()
         return points, quad_pos, commands
@@ -121,6 +129,7 @@ class EST():
                     break
 
             if is_free and x_new not in self.V:
+
                 self.E_points[x_new] = x_new_points
                 self.E_states[x_new] = X_new
                 self.E_tau[x_new] = Commands[0,:].tolist()
@@ -128,6 +137,8 @@ class EST():
 
                 # Parent = first point
                 parent = x_new_points[0]
+
+                self.E_parent[x_new] = parent
 
                 self.update_proximity(x_new)
 
@@ -156,7 +167,8 @@ class EST():
                 'tau_list': self.tau_path,
                 'f_list': self.f_path,
                 'path_length': str(path_length),
-                'iterations': len(self.V)
+                'iterations': len(self.V),
+                'states' : self.states_path
             }
         else:
             info = {
@@ -170,32 +182,206 @@ class EST():
 
     def reconstruct_path(self, x_goal):
         x_current = x_goal
+
         while x_current != self.start:
             path_points = self.E_points[x_current]
+
+            # positions
             self.path = path_points[:-1] + self.path
-            self.states_path = self.E_states[x_current][:, :-1] + self.states_path
+
+            # states (FIXED)
+            segment_states = self.E_states[x_current]
+            for k in reversed(range(segment_states.shape[1])):
+                self.states_path.insert(0, segment_states[:, k].reshape((-1, 1)))
+
+            # controls
             self.tau_path = self.E_tau[x_current][:-1] + self.tau_path
             self.f_path = self.E_f[x_current][:-1] + self.f_path
+
             x_current = path_points[0]
+
         self.path.reverse()
+
+        # self.plot_result(save=True, fname=f"figures/est_results_env_2.pdf")
         return self.path
     
     def check_goal_reached(self, x):
         return np.linalg.norm(np.array(x) - np.array(self.goal)) < self.goal_tol
+    def plot_result(self, show=True, save=False, fname="est_result.png"):
+        fig, ax = plt.subplots(figsize=(7, 7))
+
+        # --- Plot obstacles ---
+        for obs in self.map.obstacles:
+            (ox1, oy1), (ox2, oy2) = obs
+            ax.fill([ox1, ox2, ox2, ox1],
+                    [oy1, oy1, oy2, oy2],
+                    color="gray", alpha=0.5)
+
+        # --- Plot sampled nodes ---
+        V = np.array(self.V)
+        ax.scatter(V[:, 0], V[:, 1],
+                s=10, c="lightblue", label="Sampled nodes")
+
+        # --- Plot tree edges ---
+        for x_new, segment in self.E_points.items():
+            seg = np.array(segment)   # shape: (N, 2)
+
+            ax.plot(
+                seg[:, 0], seg[:, 1],
+                color="#6baed6",      # muted teal
+                linewidth=0.6,
+                alpha=0.5,
+                zorder=1
+            )
+
+        # # --- Start & goal ---
+        ax.scatter(*self.start, s=120, c="green", marker="o", label="Start")
+        ax.scatter(*self.goal, s=120, c="red", marker="*", label="Goal")
+        # # --- Plot path if it exists ---
+        if self.path:
+            path = np.array(self.path)
+
+            # Load path
+            ax.plot(path[:, 0], path[:, 1],
+                    c="blue", linewidth=2, label="Load path")
+
+            # --- Quadcopter path ---
+            quad_path = []
+
+            for x in self.states_path:
+                self.quad.x = x.copy()
+                q = self.quad.quad_position().flatten()
+                quad_path.append(q)
+
+            quad_path = np.array(quad_path)
+
+            # Insert NaNs between discontinuous segments
+            quad_x = quad_path[:, 0].astype(float)
+            quad_y = quad_path[:, 1].astype(float)
+
+            # Break line wherever jump is too large
+            jump_thresh = 0.5   # meters (tune if needed)
+
+            dx = np.diff(quad_x)
+            dy = np.diff(quad_y)
+            dist = np.sqrt(dx**2 + dy**2)
+
+            breaks = np.where(dist > jump_thresh)[0] + 1
+
+            quad_x = np.insert(quad_x, breaks, np.nan)
+            quad_y = np.insert(quad_y, breaks, np.nan)
+
+            ax.plot(quad_x, quad_y,
+                    linestyle="--",
+                    linewidth=2,
+                    color="orange",
+                    label="Quad path")
+
+            # --- Draw final quad + load ---
+            if self.states_path:
+                # # Initial configuration
+                self.draw_quad_glyph(
+                    ax,
+                    self.states_path[0],
+                    color="#bbbbbb",   # light gray
+                    zorder=8
+                )
+                # Final configuration
+                self.draw_quad_glyph(
+                    ax,
+                    self.states_path[-1],
+                    color="#7b4ab2",   # purple
+                    zorder=9
+                )
+
+
+
+        ax.set_aspect("equal")
+        ax.set_xlim(0, self.map.width)
+        ax.set_ylim(0, self.map.height)
+        ax.set_xlabel("y [m]")
+        ax.set_ylabel("z [m]")
+        ax.legend(loc='upper right')
+        ax.grid(True)
+
+        if save:
+            plt.savefig(fname, dpi=300)
+        if show:
+            plt.show()
+        plt.close()
+
+    def draw_quad_glyph(self, ax, x_state, color="#7b4ab2", zorder=6):
+        """
+        Draw a stylized quad + load configuration (T-shape)
+        """
+
+        self.quad.x = x_state.copy()
+
+        # Positions
+        x_l = x_state[0:2].flatten()
+        x_q = self.quad.quad_position().flatten()
+
+        theta = float(x_state[4, 0])
+        L = self.quad.L
+
+        # Horizontal arm direction
+        arm_dir = np.array([np.cos(theta), np.sin(theta)])
+
+        # Motor positions (LEFT and RIGHT)
+        m_left  = x_q - L * arm_dir
+        m_right = x_q + L * arm_dir
+
+        # ---- Arm ----
+        ax.plot([m_left[0], m_right[0]],
+                [m_left[1], m_right[1]],
+                linewidth=5,
+                color=color,
+                zorder=zorder)
+
+        # ---- Quad body ----
+        ax.scatter(x_q[0], x_q[1],
+                s=70, marker="s",
+                color=color,
+                zorder=zorder + 1)
+
+        # ---- Motors (BOTH) ----
+        ax.scatter([m_left[0], m_right[0]],
+                [m_left[1], m_right[1]],
+                s=40,
+                color="#f4a6c1",
+                zorder=zorder + 2)
+
+        # ---- Cable ----
+        ax.plot([x_q[0], x_l[0]],
+                [x_q[1], x_l[1]],
+                linewidth=3,
+                color="black",
+                zorder=zorder - 1)
+
+        # ---- Load ----
+        ax.scatter(x_l[0], x_l[1],
+                s=50,
+                color="black",
+                zorder=zorder)
 
 
 if __name__ == "__main__":
     # def search(obstacles, seed):
 
-    for i in range(100):
+    for i in range(0,20):
         print(i)
         seed = i
         quad = quad_w_load_dyn()
         start_state = np.zeros((quad.n_states,1))
         start_state[0:quad.n_states] = quad.x.copy()
-        start_point = (5.2,1.5)
+        # start_point = (5.2,1.5)
+        # goal = (3, 2.0)
+        #scenario 1, obstacle 5
+        start_point = (7, 1.50)
+        goal = (3, 8.0)
         start_state[0:2] = np.array([[start_point[0]],[start_point[1]]])
-        goal = (3,2.0)
+        
+        
         # goal = (3,1.0)
-        est = EST(start_point, start_state, goal, quad, obstacles=1, seed=seed)
+        est = EST(start_point, start_state, goal, quad, obstacles=5, seed=seed)
         est.search(100000)

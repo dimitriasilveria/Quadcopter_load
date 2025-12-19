@@ -11,6 +11,9 @@ from scipy.spatial import KDTree
 import os
 import yaml
 import time
+import matplotlib as mpl
+plt.rcParams["text.usetex"] = True
+mpl.rcParams["font.size"] = 16
 class NoAliasDumper(yaml.SafeDumper):
     def ignore_aliases(self, data):
         return True
@@ -32,10 +35,14 @@ class RRT:
         if obstacles == 5:
             obstacle_gap = 3.0
             self.map.obstacles_five(obstacle_gap)
+        elif obstacles == 1:
+            self.map.obstacles_one(4)
+            file_dir = "rrt_star_obstacle_1"
+            os.makedirs(file_dir, exist_ok=True)
         self.goal_found = False
         self.best_goal_node = None
         self.best_goal_cost = np.inf
-        self.check_list = [199, 249, 499]
+        self.check_list = [199, 499, 999]
         # self.check_list = [49, 249, 400]
         # if map_type == 1:
         #     self.map.obstacles_one(l)
@@ -48,12 +55,13 @@ class RRT:
 
         self.path_length = 0
         self.path = []
+        self.states_path = []
         self.V = [self.start]  # List of vertices
         self.quad = quad
         self.quad.x[0:2] = np.array(self.start[0:2]).reshape((2,1))  # initial load position
         self.quad.x[2:4] = np.array(self.start[2:4]).reshape((2,1))  # initial load velocity
         self.E_states = {}  # Edges in the tree
-        self.E_states[self.start] = self.quad.x.flatten()
+        self.E_states[self.start] = [self.quad.x.flatten()]  # ✅ FIX: Store as list
         self.E = {}  # Edges in the tree
         self.E_commands = {} #dictionary to save the commands
         # self.E[self.start] = None  # start has no parent
@@ -120,16 +128,16 @@ class RRT:
             current_cost = self.cost_to_come(neighbor)
             if  tentative_cost < current_cost:
                 # Rewire
-                nearest_states = self.E_states[q_new]
+                nearest_states = self.E_states[q_new][-1]  # ✅ FIX: Get last state from list
                 L_new, States_new, Commands_new = self.steer_toward_node(nearest_states, np.hstack((np.array(neighbor), np.array([0.0, 0.0]))).reshape((6,1)))
                 if L_new is not None:
                     # l_new = L_new[-1]
                     # l_new_point = self.array_to_tuple(l_new)
                     # neighbor_tuple = self.array_to_tuple(neighbor)
                     self.E[neighbor] = [L_new]
-                    States_new[0:4] = np.asarray(q_new)
+                    States_new[0][0:4] = np.asarray(q_new)  # ✅ FIX: Update first state in list
                     self.E_states[neighbor] = States_new
-                    # ic(q_new, neighbor)
+                    ic(q_new, neighbor)
                     self.E_commands[neighbor] = Commands_new
     
     def neighborhood(self, q_new):
@@ -159,7 +167,7 @@ class RRT:
                 cost = diff.T @ self.K @ diff
                 total_cost = cost_q + cost
                 if total_cost < best_cost:
-                    states = self.E_states[neighbor]
+                    states = self.E_states[neighbor][-1]  # ✅ FIX: Get last state from list
                     L_new, States_new, Commands_new = self.steer_toward_node(states, np.hstack((q_new_array, np.array([0.0, 0.0]))).reshape((6,1)))
                     if L_new is not None:
                         best_cost = total_cost
@@ -177,9 +185,10 @@ class RRT:
         self.quad.x = x.reshape((8,1))
         # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
         Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
+        Quad_states = [l_near.copy()]  # ✅ FIX: Store ALL quadcopter states
         latest_control = [None, None]
         Commands_control = []
-        while (np.linalg.norm(x[0:2]-l_rand[0:2].flatten()) > 0.001):
+        while (np.linalg.norm(x[0:4]-l_rand[0:4].flatten()) > 0.001):
             n_points = 10  # number of intermediate states per dt
             t_eval = np.linspace(t, t + self.dt, n_points)
             t_span = (t, t + self.dt)
@@ -197,9 +206,9 @@ class RRT:
                 # Update state
             x = sol.y.T[-1]
             x[4] = np.clip(x[4], -np.pi/4, np.pi/4)  # keep angles within -pi/4 to pi/4
+            x[5] = np.clip(x[5], -np.pi/1.5, np.pi/1.5)  # limit angular velocities
             x[6] = np.clip(x[6], -np.pi/2, np.pi/2)
-            x[5] = np.clip(x[5], -np.pi, np.pi)  # limit angular velocities
-            x[7] = np.clip(x[7], -np.pi, np.pi)
+            x[7] = np.clip(x[7], -np.pi/1.5, np.pi/1.5)
             t = sol.t[-1]
             if (t > tf):
                 # print("Exceeded time limit in steer_toward_node")
@@ -211,9 +220,9 @@ class RRT:
                 if self.map.is_free((state[0], state[1]), quad_pos.flatten(), self.quad.L, state[6]) == False:
                     return None, None, None
             Pos_vel.append(x[0:4])  # store load position and velocity
+            Quad_states.append(x.copy())  # ✅ FIX: Store intermediate state
             Commands_control.append(latest_control)
-        Quad_states = x  # store quad states
-        return Pos_vel, Quad_states, Commands_control
+        return Pos_vel, Quad_states, Commands_control  # ✅ FIX: Return list of states
 
     # def float_to_int(self, v):
     #     multiplier = 1e5
@@ -228,6 +237,7 @@ class RRT:
         self.quad.x = x.reshape((8,1))
         # self.quad.x[2:4] = x[2:4].reshape((2,1))  # initial load velocity
         Pos_vel = [l_near[0:4]] #ensuring that parent info is the first point
+        Quad_states = [l_near.copy()]  # ✅ FIX: Store ALL quadcopter states
         #simulate
         Commands_control = []
         latest_control = [None, None]
@@ -260,9 +270,9 @@ class RRT:
                 if self.map.is_free((state[0], state[1]), quad_pos.flatten(), self.quad.L, state[6]) == False:
                     return None, None, None
             Pos_vel.append(x[0:4])  # store load position and velocity
+            Quad_states.append(x.copy())  # ✅ FIX: Store intermediate state
             Commands_control.append(latest_control)
-        Quad_states = x  # store quad states
-        return Pos_vel, Quad_states, Commands_control
+        return Pos_vel, Quad_states, Commands_control  # ✅ FIX: Return list of states
 
     def search(self, num_iter=500, seed=None):
         if seed is not None:
@@ -275,7 +285,7 @@ class RRT:
             #     self.get_stats(i)
             l_rand = self.sample()
             l_nearest = self.nearest(l_rand)
-            nearest_states = self.E_states[l_nearest]
+            nearest_states = self.E_states[l_nearest][-1]  # ✅ FIX: Get last state from list
             L_new, Q_new, Commands_new = self.steer(nearest_states, np.hstack((np.array(l_rand), np.array([0.0, 0.0]))).reshape((6,1)))
             if L_new is None:
                 continue
@@ -292,7 +302,7 @@ class RRT:
             if l_new_point not in self.V:
                 self.V.append(l_new_point)
                 self.E[l_new_point] = [L_new]
-                self.E_states[l_new_point] = Q_new
+                self.E_states[l_new_point] = Q_new  # ✅ Now this is a list of states
                 self.E_commands[l_new_point] = Commands_new
             if l_new_point != self.goal:
                 self.rewire(l_new_point, neighbors)
@@ -361,20 +371,182 @@ class RRT:
                 self.info_dict['self.E'] = self.E
                 return None, 0, None  # Stop and return an error state
             path_points = self.E[current][0]
+            
+            # ✅ FIX: Handle list of states properly
+            segment_states = self.E_states[current]
+            self.states_path = segment_states[:-1] + self.states_path  # exclude last to avoid duplication
+            
             commands += self.E_commands[current]
             path = path_points[:-1] + path  # prepend to path
             current = self.array_to_tuple(path_points[0])
         path = [self.start] + path
+        self.states_path = self.E_states[self.start] + self.states_path  # ✅ FIX: Add initial state list
+        self.info_dict['states'] = self.states_path
         P = np.vstack(path)
         diffs = np.diff(P[:,0:2], axis=0)
         segment_lengths = np.linalg.norm(diffs, axis=1)
         path_length = np.sum(segment_lengths)
         # num_iterations = len(self.V)
         commands = commands
-
+        self.path = path
+        # self.plot_result()
 
         # self.path.reverse()  # reverse to get from start to goal
         return path, path_length, commands
+    
+    def plot_result(self, show=True, save=True, fname="figures/rrt_star_scenario_2.png"):
+        fig, ax = plt.subplots(figsize=(7, 7))
+
+        # --- Plot obstacles ---
+        for obs in self.map.obstacles:
+            (ox1, oy1), (ox2, oy2) = obs
+            ax.fill([ox1, ox2, ox2, ox1],
+                    [oy1, oy1, oy2, oy2],
+                    color="gray", alpha=0.5)
+
+        # --- Plot sampled nodes ---
+        V = np.array(self.V)
+        ax.scatter(V[:, 0], V[:, 1],
+                s=10, c="lightblue", label="Sampled nodes")
+        # --- Plot RRT dynamical tree (full trajectories) ---
+        for child, trajectories in self.E.items():
+            seg = np.array(trajectories[0])  # shape: (N, 4) [x, y, vx, vy]
+
+            ax.plot(
+                seg[:, 0], seg[:, 1],
+                color="#6baed6",
+                linewidth=0.6,
+                alpha=0.5,
+                zorder=1
+            )
+
+
+        # --- Plot path if it exists ---
+        if self.path:
+            path = np.array(self.path)
+
+            # Load path
+            ax.plot(path[:, 0], path[:, 1],
+                    c="blue", linewidth=2, label="Load path")
+
+            # --- Quadcopter path ---
+            quad_path = []
+
+            for x in self.states_path:
+                # Handle both list and array formats
+                if isinstance(x, list):
+                    x_array = np.array(x).reshape((8,1))
+                else:
+                    x_array = x.reshape((8,1))
+                    
+                self.quad.x = x_array.copy()
+                q = self.quad.quad_position().flatten()
+                quad_path.append(q)
+
+            quad_path = np.array(quad_path)
+
+            # Plot continuous quadcopter path (no breaks needed now)
+            ax.plot(quad_path[:, 0], quad_path[:, 1],
+                    linestyle="--",
+                    linewidth=2,
+                    color="orange",
+                    label="Quad path")
+
+            # --- Draw final quad + load ---
+            if self.states_path:
+
+                # Initial configuration
+                self.draw_quad_glyph(
+                    ax,
+                    self.states_path[0],
+                    color="#bbbbbb",   # light gray
+                    zorder=8
+                )
+
+                # Final configuration
+                self.draw_quad_glyph(
+                    ax,
+                    self.states_path[-1],
+                    color="#7b4ab2",   # purple
+                    zorder=9
+                )
+                
+        # --- Start & goal ---
+        ax.scatter(*self.start[0:2], s=120, c="green", marker="o", label="Start")
+        ax.scatter(*self.goal[0:2], s=120, c="red", marker="*", label="Goal")
+
+        ax.set_aspect("equal")
+        ax.set_xlim(0, self.map.width)
+        ax.set_ylim(0, self.map.height)
+        ax.set_xlabel("x [m]")
+        ax.set_ylabel("y [m]")
+        ax.legend(loc='upper right')
+        ax.grid(True)
+
+        if save:
+            plt.savefig(fname, dpi=300)
+        if show:
+            plt.show()
+        plt.close()
+
+    def draw_quad_glyph(self, ax, x_state, color="#7b4ab2", zorder=6):
+        """
+        Draw a stylized quad + load configuration (T-shape)
+        """
+        # Handle both list and array formats
+        if isinstance(x_state, list):
+            x_state = np.array(x_state).reshape((8,1))
+        else:
+            x_state = x_state.reshape((8,1))
+            
+        self.quad.x = x_state.copy()
+
+        # Positions
+        x_l = x_state[0:2].flatten()
+        x_q = self.quad.quad_position().flatten()
+
+        theta = float(x_state[4, 0])
+        L = self.quad.L
+
+        # Horizontal arm direction
+        arm_dir = np.array([np.cos(theta), np.sin(theta)])
+
+        # Motor positions (LEFT and RIGHT)
+        m_left  = x_q - L * arm_dir
+        m_right = x_q + L * arm_dir
+
+        # ---- Arm ----
+        ax.plot([m_left[0], m_right[0]],
+                [m_left[1], m_right[1]],
+                linewidth=5,
+                color=color,
+                zorder=zorder)
+
+        # ---- Quad body ----
+        ax.scatter(x_q[0], x_q[1],
+                s=70, marker="s",
+                color=color,
+                zorder=zorder + 1)
+
+        # ---- Motors (BOTH) ----
+        ax.scatter([m_left[0], m_right[0]],
+                [m_left[1], m_right[1]],
+                s=40,
+                color="#f4a6c1",
+                zorder=zorder + 2)
+
+        # ---- Cable ----
+        ax.plot([x_q[0], x_l[0]],
+                [x_q[1], x_l[1]],
+                linewidth=3,
+                color="black",
+                zorder=zorder - 1)
+
+        # ---- Load ----
+        ax.scatter(x_l[0], x_l[1],
+                s=50,
+                color="black",
+                zorder=zorder)
 
     def get_stats(self, num_iterations):
         if num_iterations == self.check_list[0]:
@@ -423,7 +595,7 @@ class RRT:
             self._ax.set_ylim(0, self.map.height)
             self._ax.legend()
 
-            # store artists so we don’t redraw everything
+            # store artists so we don't redraw everything
             self._edge_lines = []
 
         # Draw new edges
@@ -466,15 +638,16 @@ class RRT:
         plt.show()
 
 if __name__ == "__main__":
-    folder_name = "RRT_star_paths_2D_obstacle_5"
+    folder_name = "RRT_star_paths_2D_obstacle_1_more"
     os.makedirs(folder_name, exist_ok=True)
-    for i in range(37,100):
+    for i in range(56,59):
         print(i)
         quad = quad_dyn()
-        # start = np.array([7, 1.50, 0.0, 0.0])
-        # goal = np.array([3, 8.0, 0.0, 0.0])
-        start = (7, 1.50, 0.0, 0.0)
-        goal = (3, 8.0, 0.0, 0.0)
-        rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
+        # start = (7, 1.50, 0.0, 0.0)
+        # goal = (3, 8.0, 0.0, 0.0)
+        #scenario 2 obstacle 1
+        start = (5.2, 1.50, 0.0, 0.0)
+        goal = (3, 2.0, 0.0, 0.0)
+        rrt = RRT(start=start, goal=goal, obstacles=1, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
         path = rrt.search(seed=i, num_iter=2000)
         # rrt.plot_path(path, fig_name=f"{folder_name}/rrt_path_seed_{i}.pdf")
