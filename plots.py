@@ -25,6 +25,7 @@ num_success = 0
 tau_list = []
 f_list = []
 num_iteratios_list = []
+costs_list = []
 for file in rrt_files:
     with open(file, 'r') as f:
         data = yaml.safe_load(f)
@@ -35,12 +36,16 @@ for file in rrt_files:
             tau_list.append(command[0])
             f_list.append(command[1])
             num_iteratios_list.append(data['num_iterations'])
+        if 'path_cost' in data:
+            costs_list.append(float(data['path_cost']))
 
 min_tau = min(tau_list)
 max_tau = max(tau_list)
 ic(f"percentage of success:", num_success/len(rrt_files))
 median_path_length = statistics.median(path_length_list)
 ic(f"median path length of algorithm {algorithm}: {median_path_length}")
+median_cost = statistics.median(costs_list)
+ic(f"median of number of iterations to reach the goal: {median_cost}")
 median_iterations = statistics.median(num_iteratios_list)
 ic(f"median of number of iterations to reach the goal: {median_iterations}")
 
@@ -69,6 +74,7 @@ num_success = 0
 tau_list = []
 f_list = []
 num_iteratios_list = []
+costs_list = []
 for file in rrt_star_files:
     with open(file, 'r') as f:
         data = yaml.safe_load(f)
@@ -86,9 +92,14 @@ for file in rrt_star_files:
                     iterations.append(int(m.group(1)))
             num_iteratios_list.append(min(iterations))
 
+    if 'cost' in data['1999 iterations:']:
+        costs_list.append(float(data['1999 iterations:']['cost']))
+
 ic(f"percentage of success:", num_success/len(rrt_star_files))
 median_path_length = statistics.median(path_length_list)
 ic(f"median path length of algorithm {algorithm}: {median_path_length}")
+median_cost = statistics.median(costs_list)
+ic(f"median of number of iterations to reach the goal: {median_cost}")
 median_iterations = statistics.median(num_iteratios_list)
 ic(f"median of number of iterations to reach the goal: {median_iterations}")
 

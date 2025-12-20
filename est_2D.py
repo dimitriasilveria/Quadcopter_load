@@ -168,8 +168,8 @@ class EST():
                 'f_list': self.f_path,
                 'path_length': str(path_length),
                 'iterations': len(self.V),
-                'states' : self.states_path
             }
+            np.savez(f"{self.file_name[:-5]}.npz", states= np.array(self.states_path))
         else:
             info = {
                 'path_length': 'np.inf',
@@ -367,8 +367,8 @@ class EST():
 
 if __name__ == "__main__":
     # def search(obstacles, seed):
-
-    for i in range(0,20):
+    # success = [53, 59, 69, 51, 43, 16, 64, 24, 37, 56, 75, 73, 5, 71, 62, 58, 25, 38, 65, 27, 14, 11, 95, 46, 72, 0, 50, 44]
+    for i in range(21,40):
         print(i)
         seed = i
         quad = quad_w_load_dyn()

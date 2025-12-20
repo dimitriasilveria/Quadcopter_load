@@ -280,7 +280,7 @@ class RRT:
             self.seed = seed
         begin = time.time()
         for i in range(int(num_iter)):
-            ic(i)
+            # ic(i)
             # if i in self.check_list:
             #     self.get_stats(i)
             l_rand = self.sample()
@@ -381,7 +381,7 @@ class RRT:
             current = self.array_to_tuple(path_points[0])
         path = [self.start] + path
         self.states_path = self.E_states[self.start] + self.states_path  # ✅ FIX: Add initial state list
-        self.info_dict['states'] = self.states_path
+        np.savez(f"{self.file_name[:-5]}.npz", states= np.array(self.states_path))
         P = np.vstack(path)
         diffs = np.diff(P[:,0:2], axis=0)
         segment_lengths = np.linalg.norm(diffs, axis=1)
@@ -638,16 +638,15 @@ class RRT:
         plt.show()
 
 if __name__ == "__main__":
-    folder_name = "RRT_star_paths_2D_obstacle_1_more"
+    folder_name = "RRT_star_paths_2D_obstacle_5"
     os.makedirs(folder_name, exist_ok=True)
-    for i in range(56,59):
+    for i in range(20,0,-1):
         print(i)
         quad = quad_dyn()
-        # start = (7, 1.50, 0.0, 0.0)
-        # goal = (3, 8.0, 0.0, 0.0)
-        #scenario 2 obstacle 1
-        start = (5.2, 1.50, 0.0, 0.0)
-        goal = (3, 2.0, 0.0, 0.0)
-        rrt = RRT(start=start, goal=goal, obstacles=1, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
+        # start = np.array([7, 1.50, 0.0, 0.0])
+        # goal = np.array([3, 8.0, 0.0, 0.0])
+        start = (7, 1.50, 0.0, 0.0)
+        goal = (3, 8.0, 0.0, 0.0)
+        rrt = RRT(start=start, goal=goal, obstacles=5, quad=quad, file_name=f"{folder_name}/rrt_path_seed_{i}.yaml")
         path = rrt.search(seed=i, num_iter=2000)
         # rrt.plot_path(path, fig_name=f"{folder_name}/rrt_path_seed_{i}.pdf")

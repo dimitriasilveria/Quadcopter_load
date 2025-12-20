@@ -123,6 +123,8 @@ class quad_w_load_dyn:
 
 if __name__ == "__main__":
     quad = quad_w_load_dyn()
+    print(quad.calc_max_torque_thrust(), quad.calc_min_torque_thrust())
+    input()
     f = 9.81*(quad.mq + quad.ml)+2  # thrust force
     tau = -0.05
     N = 200
